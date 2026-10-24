@@ -2,6 +2,7 @@
 // 架构：主进程跑原有 watchdog（纯 Node 代码原样复用）→ WS 广播 → 本窗口渲染 Xbox 风格卡片
 import { app, BrowserWindow, ipcMain, shell, screen, Tray, Menu, dialog, net } from "electron";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { startWatchdog } from "../src/watchdog/watchdog.js";
@@ -151,11 +152,54 @@ function openPanel(browser = false) {
 
 // 托盘图标：左键打开面板，右键菜单含开机自启开关与退出（这是桌面版唯一的可见入口）
 function exePathForAutostart() {
-  // portable exe 的 execPath 在临时解压目录，注册自启必须用用户手里的真实 exe 路径
+  // portable 单文件 exe：execPath 指向临时解压目录里的内部 exe（名字 = productName），
+  // 直接注册它会导致重启后失效，也可能指向一个不存在的文件名。
+  // PORTABLE_EXECUTABLE_FILE 是 electron-builder 注入的「用户手里那个真实 exe 的完整路径」，优先用它。
+  if (process.env.PORTABLE_EXECUTABLE_FILE) return process.env.PORTABLE_EXECUTABLE_FILE;
   if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    // 兜底：老版本 electron-builder 没有 FILE 变量时才用 DIR + 内部 exe 名
     return path.join(process.env.PORTABLE_EXECUTABLE_DIR, path.basename(process.execPath));
   }
   return process.execPath;
+}
+
+// 自启状态文件：记录"用户想不想要自启"这个意图。
+// Electron 的 getLoginItemSettings 无法区分「用户关掉了」和「注册路径过期了」，
+// 所以自己存一份意图，启动时据此修正路径（用户改名/移动 exe 后自启不会静默失效）。
+function autostartStatePath() {
+  return path.join(dataRoot(), "cfg", "autostart.json");
+}
+function readAutostartWanted() {
+  try { return JSON.parse(fs.readFileSync(autostartStatePath(), "utf8")).enabled === true; }
+  catch { return false; }
+}
+function writeAutostartWanted(enabled) {
+  try {
+    fs.mkdirSync(path.dirname(autostartStatePath()), { recursive: true });
+    fs.writeFileSync(autostartStatePath(), JSON.stringify({ enabled, path: exePathForAutostart() }, null, 1));
+  } catch (e) { log.warn(`[AUTOSTART] 写入状态失败: ${e.message}`); }
+}
+function applyAutostart(enabled) {
+  const target = exePathForAutostart();
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled, path: target });
+    writeAutostartWanted(enabled);
+    log.info(`[AUTOSTART] ${enabled ? "已开启" : "已关闭"}，注册路径 ${target}`);
+  } catch (e) {
+    log.warn(`[AUTOSTART] 设置失败: ${e.message}`);
+  }
+}
+// 自愈：上次想要自启，但当前 exe 路径没在注册表里（改名/移动/换盘）→ 用当前路径重写一次
+function healAutostartPath() {
+  if (!readAutostartWanted()) return;
+  const target = exePathForAutostart();
+  try {
+    if (!app.getLoginItemSettings({ path: target }).openAtLogin) {
+      app.setLoginItemSettings({ openAtLogin: true, path: target });
+      writeAutostartWanted(true);
+      log.info(`[AUTOSTART] 自启路径已自愈为 ${target}`);
+    }
+  } catch (e) { log.warn(`[AUTOSTART] 自愈失败: ${e.message}`); }
 }
 
 function createTray() {
@@ -168,8 +212,8 @@ function createTray() {
     {
       label: "开机自启",
       type: "checkbox",
-      checked: app.getLoginItemSettings({ path: exePathForAutostart() }).openAtLogin,
-      click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked, path: exePathForAutostart() }),
+      checked: app.getLoginItemSettings({ path: exePathForAutostart() }).openAtLogin || readAutostartWanted(),
+      click: (item) => applyAutostart(item.checked),
     },
     { type: "separator" },
     // 先 quit 再销毁托盘：Windows 上在菜单回调里先 destroy 可能抛异常，
@@ -214,6 +258,7 @@ app.whenReady().then(async () => {
   });
 
   createTray();
+  healAutostartPath(); // 上次要过自启但 exe 改过名/位置 → 用当前路径重写注册表，避免开机静默不启动
   connectBroadcast();
 });
 
