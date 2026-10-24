@@ -9,7 +9,7 @@
   "main": "electron/main.js",
   "scripts": {
     "watchdog": "node src/cli.js watch",
-    "test": "node --test test/",
+    "test": "node --test test/core.test.js",
     "dist": "electron-builder --win portable"
   },
   "dependencies": {

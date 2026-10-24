@@ -205,7 +205,7 @@ async function handleFileChange(folder, filePath, cfg) {
 }
 
 export async function startWatchdog() {
-  const cfg = await loadConfig();
+  let cfg = await loadConfig(); // let：每次重扫时重新加载（面板保存的 Key/路径等热生效）
   setLogFile(path.join(dataRoot(), "logs", "aw2-watchdog.log"));
 
   const lock = acquireSingleInstance(path.join(dataRoot(), "aw2.lock"));
@@ -216,9 +216,10 @@ export async function startWatchdog() {
 
   log.info("aw2 watchdog starting ...");
 
+  // 未配置 Key 不再退出进程（打包成桌面版后退出 = 整个程序闪退）：
+  // 监视/弹窗照常工作，成就详情（名称/图标/稀有度）等配好 Key 后自动生效
   if (!cfg._primaryKey && !cfg._fallbackKey) {
-    log.error("未配置 Steam API Key（https://steamcommunity.com/dev/apikey 免费申请）。运行: node src/cli.js setkey <KEY>");
-    process.exit(1);
+    log.warn("尚未配置 Steam API Key：监视运行中，但成就详情无法拉取。请在面板设置里填写（保存后约 1 分钟内生效）。");
   }
 
   if (cfg.websocket?.enabled) {
@@ -301,6 +302,8 @@ export async function startWatchdog() {
     if (rescanning) return;
     rescanning = true;
     try {
+      // 热加载配置：面板保存的 API Key / 语言 / 成就墙目录等最迟 60 秒生效，无需重启
+      cfg = await loadConfig();
       const dirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
       const next = await getWatchFolders({ userDirs: dirs });
       const added = next.filter((f) => attachWatcher(f));
