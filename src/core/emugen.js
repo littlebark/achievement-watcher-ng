@@ -41,6 +41,35 @@ async function readAppidIn(dir) {
   return null;
 }
 
+// 从游戏目录推断 appid：优先本目录，其次向下 4 层找 steam_appid.txt
+export async function detectGameAppid(gameDir) {
+  const direct = await readAppidIn(gameDir);
+  if (direct) return direct;
+
+  async function walk(dir, depth) {
+    if (depth <= 0) return null;
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return null; }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (e.name.startsWith(".") || /^\$/.test(e.name)) continue;
+        const hit = await walk(path.join(dir, e.name), depth - 1);
+        if (hit) return hit;
+        continue;
+      }
+      if (/^steam_appid\.txt$/i.test(e.name)) {
+        try {
+          const txt = (await fsp.readFile(path.join(dir, e.name), "utf8")).trim();
+          if (/^\d+$/.test(txt)) return txt;
+        } catch { /* ignore */ }
+      }
+    }
+    return null;
+  }
+
+  return walk(gameDir, 4);
+}
+
 export async function generateEmuConfig({ appid, gameDir, lang, withIcons = true, apiKey, fallbackKey }) {
   const game = await getGameData({ appID: String(appid), lang, apiKey, fallbackKey });
   const list = game.achievement.list;

@@ -65,7 +65,9 @@ node src\cli.js test-toast
 - 成就详情：已解锁/未解锁、图标、描述、解锁时间、进度型成就（`12 / 20`）
 - 设置：Steam Key（掩码显示，留空不修改）/ 备用 Key / 语言 / 通知开关 / 旧成就阈值 / 冷却 / WebSocket 端口 / 监视目录一览
 - 深链接：`#game/<appid>`、`#settings`
-- API：`GET /api/library[?refresh=1]`、`GET /api/game/<appid>`、`GET|POST /api/settings`、`GET /api/health`
+- **⬇ 下载成就**：把库里所有游戏的成就清单（名称/描述/图标地址）一次性预取到本地，之后离线也能显示并弹通知；watchdog 启动时也会自动在后台预热一遍，避免「首次解锁才联网」导致通知延迟
+- **🔧 打补丁**：网页里浏览并选中游戏目录 → 自动按 `steam_appid.txt` 识别 AppID → 生成 `steam_settings` 成就清单与图标 → 备份（`.aw2bak`）并替换 Goldberg 模拟器 DLL → 顺手预下载该游戏的 Steam 成就数据
+- API：`GET /api/library[?refresh=1]`、`GET /api/game/<appid>`、`GET|POST /api/settings`、`POST /api/schema/prefetch`、`POST /api/emu/apply`、`GET /api/fs/list?path=`、`GET /api/health`
 
 ## 成就墙（Achievement Wall）
 

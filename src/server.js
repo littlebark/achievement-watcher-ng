@@ -9,8 +9,10 @@ import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig, encrypt, resolvedPaths } from "./core/config.js";
 import { getWatchFolders, loadUserDirs } from "./core/discover.js";
 import { parseAchievementFile } from "./core/normalize/file-parsers.js";
-import { getGameData, dataRoot } from "./core/schema.js";
+import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
 import { matchAchievements } from "./core/match.js";
+import { detectGameAppid } from "./core/emugen.js";
+import { applyEmu } from "./core/emuinstall.js";
 import { log } from "./shared/log.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -254,19 +256,24 @@ async function getGameDetail(appid) {
     };
   }
   const pairs = matchAchievements(game.achievement.list, entries);
+  const localByName = new Map(pairs.map((p) => [String(p.schemaAchievement.name).toUpperCase(), p.local]));
 
-  const achievements = pairs.map((p) => ({
-    name: p.schemaAchievement.name,
-    displayName: p.schemaAchievement.displayName || p.schemaAchievement.name,
-    description: p.schemaAchievement.description || "",
-    hidden: !!p.schemaAchievement.hidden,
-    icon: p.schemaAchievement.icon || null,
-    icongray: p.schemaAchievement.icongray || null,
-    achieved: !!p.local.Achieved,
-    unlockTime: +p.local.UnlockTime || 0,
-    cur: +p.local.CurProgress || 0,
-    max: +p.local.MaxProgress || 0,
-  }));
+  // 以 Steam schema 为准列出全部成就（未解锁的也展示，而不是只显示已解锁的）
+  const achievements = game.achievement.list.map((a) => {
+    const local = localByName.get(String(a.name).toUpperCase()) || {};
+    return {
+      name: a.name,
+      displayName: a.displayName || a.name,
+      description: a.description || "",
+      hidden: !!a.hidden,
+      icon: a.icon || null,
+      icongray: a.icongray || null,
+      achieved: !!local.Achieved,
+      unlockTime: +local.UnlockTime || 0,
+      cur: +local.CurProgress || 0,
+      max: +local.MaxProgress || 0,
+    };
+  });
 
   achievements.sort((a, b) => (b.achieved - a.achieved) || (b.unlockTime - a.unlockTime));
 
@@ -280,6 +287,122 @@ async function getGameDetail(appid) {
     unlocked: achievements.filter((a) => a.achieved).length,
     achievements,
   };
+}
+
+// ---------- 成就预下载（不懒加载：提前把 schema 落到本地，解锁时不依赖网络） ----------
+let prefetchState = { running: false, at: 0, result: null };
+
+async function prefetchAllAchievements(force = false) {
+  if (prefetchState.running) return { alreadyRunning: true, at: prefetchState.at };
+
+  const cfg = await loadConfig();
+  const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
+  const folders = await getWatchFolders({ userDirs });
+  const appids = [
+    ...new Set([
+      ...folders.map((f) => f.appid).filter(Boolean),
+      ...(await cachedSchemaAppids(cfg.lang)),
+    ]),
+  ];
+
+  prefetchState = { running: true, at: Date.now(), result: null };
+  try {
+    const result = await prefetchSchemas({
+      appids,
+      lang: cfg.lang,
+      apiKey: cfg._primaryKey,
+      fallbackKey: cfg._fallbackKey,
+      concurrency: 3,
+      force,
+      onProgress: (x) => log.info(`[PREFETCH] ${x.appid} ${x.status}${x.name ? " " + x.name : ""}`),
+    });
+    prefetchState = { running: false, at: Date.now(), result };
+    libCache = { at: 0, data: null };
+    return result;
+  } catch (e) {
+    prefetchState = { running: false, at: Date.now(), result: null };
+    throw e;
+  }
+}
+
+// ---------- 模拟器补丁（网页端选目录 → 生成成就配置 → 替换 DLL 并备份） ----------
+async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
+  if (!dir || typeof dir !== "string") throw new Error("请提供游戏目录");
+  const gameDir = path.resolve(dir.trim());
+  const st = await fsp.stat(gameDir).catch(() => null);
+  if (!st?.isDirectory()) throw new Error(`目录不存在：${gameDir}`);
+
+  const appid = await detectGameAppid(gameDir);
+  if (!appid) {
+    throw new Error("在所选目录里没找到 steam_appid.txt，无法确定 AppID。请选游戏根目录（通常能看到 steam_api64.dll 或游戏 exe）");
+  }
+
+  const cfg = await loadConfig();
+  const r = await applyEmu({
+    appid,
+    gameDir,
+    mode,
+    withIcons: !!withIcons,
+    lang: cfg.lang,
+    apiKey: cfg._primaryKey,
+    fallbackKey: cfg._fallbackKey,
+  });
+
+  // 打完补丁顺手把该游戏的成就 schema 拉全（之后离线也能立刻弹通知）
+  const pre = await prefetchSchemas({
+    appids: [appid],
+    lang: cfg.lang,
+    apiKey: cfg._primaryKey,
+    fallbackKey: cfg._fallbackKey,
+    force: true,
+  });
+
+  libCache = { at: 0, data: null };
+
+  return {
+    appid,
+    gameDir,
+    exeDir: r.exeDir,
+    mode: r.mode,
+    replaced: r.applied.filter((x) => x.backup).length,
+    written: r.applied.filter((x) => !x.backup).length,
+    settingsDirs: r.genResults.map((g) => ({ dir: g.dir, total: g.total, icons: g.icons })),
+    manifest: r.manifestFile,
+    schema: pre.ok.length ? "downloaded" : pre.cached.length ? "cached" : "failed",
+    schemaError: pre.failed[0]?.error || null,
+  };
+}
+
+// ---------- 目录浏览（给网页选游戏目录用） ----------
+async function listFsDir(rawPath) {
+  if (!rawPath) {
+    const dirs = [];
+    for (const letter of "CDEFGHIJKLMNOPQRSTUVWXYZ") {
+      const p = `${letter}:\\`;
+      try { await fsp.access(p); dirs.push({ name: `${letter}:`, path: p }); } catch { /* 不存在 */ }
+    }
+    return { path: "", parent: null, dirs, appid: null, isGame: false };
+  }
+
+  const full = path.resolve(rawPath);
+  const entries = await fsp.readdir(full, { withFileTypes: true });
+  const dirs = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("$") && !e.name.startsWith("."))
+    .map((e) => ({ name: e.name, path: path.join(full, e.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+
+  // 轻量判断当前目录是不是游戏根（不做递归，避免浏览大目录变慢）
+  const hasDll = entries.some((e) => e.isFile() && /^steam_api(\d{2})?\.dll$/i.test(e.name));
+  let appid = null;
+  for (const rel of ["steam_appid.txt", path.join("steam_settings", "steam_appid.txt")]) {
+    try {
+      const txt = (await fsp.readFile(path.join(full, rel), "utf8")).trim();
+      if (/^\d+$/.test(txt)) { appid = txt; break; }
+    } catch { /* next */ }
+  }
+
+  const parent = path.dirname(full);
+  return { path: full, parent: full === parent ? "" : parent, dirs, appid, isGame: hasDll || !!appid };
 }
 
 // ---------- 设置 ----------
@@ -411,6 +534,20 @@ const server = http.createServer(async (req, res) => {
 
     if (p === "/api/settings" && req.method === "GET") {
       return sendJSON(res, 200, await getSettings());
+    }
+
+    if (p === "/api/schema/prefetch" && req.method === "POST") {
+      const body = await readBody(req).catch(() => ({}));
+      return sendJSON(res, 200, await prefetchAllAchievements(!!body.force));
+    }
+
+    if (p === "/api/fs/list") {
+      return sendJSON(res, 200, await listFsDir(url.searchParams.get("path") || ""));
+    }
+
+    if (p === "/api/emu/apply" && req.method === "POST") {
+      const body = await readBody(req);
+      return sendJSON(res, 200, await emuApplyDir(body));
     }
 
     if (p === "/api/settings" && req.method === "POST") {

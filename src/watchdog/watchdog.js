@@ -10,7 +10,7 @@ import { getWatchFolders, loadUserDirs } from "../core/discover.js";
 import { parseAchievementFile } from "../core/normalize/file-parsers.js";
 import { matchAchievements } from "../core/match.js";
 import * as track from "../core/track.js";
-import { getGameData, fetchIcon, dataRoot } from "../core/schema.js";
+import { getGameData, fetchIcon, prefetchSchemas, dataRoot } from "../core/schema.js";
 import { sendToast } from "./notify/toast.js";
 import { startWebSocket, broadcast } from "./notify/websocket.js";
 
@@ -179,6 +179,25 @@ export async function startWatchdog() {
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
   const folders = await getWatchFolders({ userDirs });
   log.info(`监视 ${folders.length} 个成就目录`);
+
+  // 后台预热成就 schema：首次解锁时不联网，避免网络差导致通知延迟
+  const appids = [...new Set(folders.map((f) => f.appid).filter(Boolean))];
+  if (appids.length) {
+    setTimeout(() => {
+      prefetchSchemas({
+        appids,
+        lang: cfg.lang,
+        apiKey: cfg._primaryKey,
+        fallbackKey: cfg._fallbackKey,
+        concurrency: 2,
+      })
+        .then((r) => {
+          log.info(`[PREFETCH] 完成：新下载 ${r.ok.length}，已缓存 ${r.cached.length}，失败 ${r.failed.length}`);
+          for (const f of r.failed) log.warn(`[PREFETCH] ${f.appid} 失败：${f.error}`);
+        })
+        .catch((e) => log.warn(`[PREFETCH] ${e.message}`));
+    }, 1500).unref?.();
+  }
 
   const watchers = [];
   for (const folder of folders) {

@@ -296,6 +296,35 @@ main {
 /* ---------- 设置 ---------- */
 .settings { padding: 24px; }
 .settings h2 { margin: 0 0 18px; font-size: 20px; }
+
+/* 打补丁：目录选择 */
+.path-row { display: flex; gap: 8px; align-items: center; }
+.path-row input {
+  flex: 1;
+  padding: 9px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #0e1620;
+  color: var(--text);
+  outline: none;
+  font-family: Consolas, monospace;
+  font-size: 12.5px;
+}
+.path-row .btn { white-space: nowrap; }
+.picker {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0e1620;
+}
+.pick {
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.pick:hover { background: rgba(255,255,255,.06); color: var(--accent); }
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 6px; }
 .field input[type=text], .field input[type=password], .field input[type=number], .field select {

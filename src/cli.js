@@ -204,6 +204,30 @@ async function cmdWall(dir) {
   console.log(`\n完成：${r.games.length} 个游戏 → ${path.join(r.wallDir, "index.json")}`);
 }
 
+async function cmdPrefetch(flags = []) {
+  const { prefetchSchemas } = await import("./core/schema.js");
+  const cfg = await loadConfig();
+  const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
+  const folders = await getWatchFolders({ userDirs });
+  const appids = [...new Set(folders.map((f) => f.appid).filter(Boolean))];
+  if (!appids.length) return console.log("没有发现任何游戏存档目录，先运行 scan 看看。");
+
+  const force = flags.includes("--force");
+  console.log(`预下载 ${appids.length} 个游戏的成就数据${force ? "（强制刷新）" : ""} ...`);
+  const r = await prefetchSchemas({
+    appids,
+    lang: cfg.lang,
+    apiKey: cfg._primaryKey,
+    fallbackKey: cfg._fallbackKey,
+    force,
+    onProgress: (x) => {
+      if (x.status === "ok") console.log(`  ↓ ${x.appid} ${x.name || ""}`);
+      else if (x.status === "failed") console.log(`  ✗ ${x.appid} ${x.error}`);
+    },
+  });
+  console.log(`\n完成：新增 ${r.ok.length}，已缓存 ${r.cached.length}，失败 ${r.failed.length}`);
+}
+
 async function cmdEmuRestore(appid) {
   if (!appid) return console.log("用法: node src/cli.js emu-restore <appid>");
   const r = await restoreEmu(appid);
@@ -284,6 +308,7 @@ async function main() {
     case "emu-restore": return cmdEmuRestore(args[0]);
     case "emu-source": return cmdEmuSource(args[0]);
     case "wall": return cmdWall(args[0]);
+    case "prefetch": return cmdPrefetch(args);
     case "path": return cmdPath(args[0], args[1], ...args.slice(2));
     case "ui": {
       const { startUI } = await import("./server.js");
@@ -311,6 +336,7 @@ async function main() {
   node src/cli.js emu-source <7z或目录> 安装/更新模拟器源（emu-apply 用的 DLL 仓库）
   node src/cli.js emu-source            查看当前模拟器源版本
   node src/cli.js wall <目录>           成就墙：把所有游戏成就归一化为 Steam 字段标准导出
+  node src/cli.js prefetch [--force]    预下载全部游戏的成就数据（之后离线也能立刻弹通知）
   node src/cli.js path                 查看全部可配置路径（成就墙 / emu 源 / 游戏搜索根）
   node src/cli.js path set <字段> <目录...>    自定义路径（wall / emuRoots / emuExtraSources / gameSearchDirs）
   node src/cli.js path reset <字段>     恢复该字段的内置默认

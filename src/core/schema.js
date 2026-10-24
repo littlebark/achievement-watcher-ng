@@ -25,11 +25,11 @@ export function dataRoot() {
 }
 
 // languages: 与原版 steam.json 的 api 字段一致（schinese 等），此处校验交给 config
-export async function getGameData({ appID, lang, apiKey, fallbackKey }) {
+export async function getGameData({ appID, lang, apiKey, fallbackKey, force = false }) {
   const cacheDir = path.join(dataRoot(), "steam_cache", "schema", lang);
   const filePath = path.join(cacheDir, `${appID}.db`);
 
-  if (await isYoungerThan(filePath, SCHEMA_TTL)) {
+  if (!force && (await isYoungerThan(filePath, SCHEMA_TTL))) {
     try { return JSON.parse(await fsp.readFile(filePath, "utf8")); }
     catch (e) { log.warn(`schema cache corrupt for ${appID}: ${e.message}`); }
   }
@@ -53,8 +53,48 @@ export async function getGameData({ appID, lang, apiKey, fallbackKey }) {
   }
 }
 
-const RETRY_DELAYS = [400, 1200, 2500]; // 网络抖动重试（Steam API 偶发 TLS/连接重置）
+// 批量预取成就 schema：watchdog 启动 / 网页点"下载成就"时调用。
+// 目的：不要在首次解锁时才联网——网络差会让通知延迟甚至丢通知。
+export async function prefetchSchemas({
+  appids = [],
+  lang,
+  apiKey,
+  fallbackKey,
+  concurrency = 3,
+  force = false,
+  onProgress,
+} = {}) {
+  const cacheDir = path.join(dataRoot(), "steam_cache", "schema", lang);
+  const queue = [...new Set(appids.map(String))];
+  const result = { total: queue.length, ok: [], cached: [], failed: [] };
+  let cursor = 0;
 
+  async function worker() {
+    while (cursor < queue.length) {
+      const appid = queue[cursor++];
+      const file = path.join(cacheDir, `${appid}.db`);
+      try {
+        if (!force && (await isYoungerThan(file, SCHEMA_TTL))) {
+          result.cached.push(appid);
+          onProgress?.({ appid, status: "cached" });
+          continue;
+        }
+        const data = await getGameData({ appID: appid, lang, apiKey, fallbackKey, force });
+        result.ok.push(appid);
+        onProgress?.({ appid, status: "ok", name: data.name });
+      } catch (e) {
+        result.failed.push({ appid, error: e.message });
+        onProgress?.({ appid, status: "failed", error: e.message });
+      }
+    }
+  }
+
+  const lanes = Math.max(1, Math.min(concurrency, queue.length || 1));
+  await Promise.all(Array.from({ length: lanes }, worker));
+  return result;
+}
+
+const RETRY_DELAYS = [400, 1200, 2500]; // 网络抖动重试（Steam API 偶发 TLS/连接重置）
 async function fetchSchema(appID, lang, key) {
   const url = `https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v0002/?key=${key}&appid=${appID}&l=${lang}&format=json`;
 

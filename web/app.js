@@ -122,7 +122,7 @@ async function openDetail(appid) {
         </div>
       </div>
       <div class="detail-list">
-        ${g.achievements.map((a) => `
+        ${g.achievements.length ? g.achievements.map((a) => `
           <div class="ach ${a.achieved ? "" : "locked"}">
             ${(a.achieved ? a.icon : a.icongray || a.icon)
               ? `<img src="${esc(a.achieved ? a.icon : a.icongray || a.icon)}" alt="">`
@@ -136,10 +136,127 @@ async function openDetail(appid) {
                 ? `<span class="ok">✔ 已解锁</span><br>${fmtTime(a.unlockTime)}`
                 : (a.max > 0 ? `${a.cur} / ${a.max}` : "未解锁")}
             </div>
-          </div>`).join("")}
+          </div>`).join("") : `
+          <p class="empty">
+            这个游戏的成就清单还没下载（离线状态）。<br>
+            点右上角 <b>⬇ 下载成就</b> 补齐后即可显示全部 ${g.total} 个成就。
+          </p>`}
       </div>`;
   } catch (e) {
     modalBody.innerHTML = `<p class="empty">加载失败：${esc(e.message)}</p>`;
+  }
+}
+
+// ---------- 成就预下载（不懒加载） ----------
+async function prefetchAchievements(btn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "下载中…";
+  toast("开始下载成就数据，网络慢时会久一点…");
+  try {
+    const r = await api("/api/schema/prefetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: false }),
+    });
+    if (r.alreadyRunning) {
+      toast("已有下载任务正在进行");
+      return;
+    }
+    const failed = r.failed?.length || 0;
+    toast(`下载完成：新增 ${r.ok.length} 个，已缓存 ${r.cached.length} 个${failed ? `，失败 ${failed} 个` : ""}`);
+    if (r.ok.length) await loadLibrary(true);
+  } catch (e) {
+    toast(`下载失败：${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+// ---------- 打补丁（选目录 → emu-gen + emu-apply） ----------
+async function openPatchDialog() {
+  modal.classList.remove("hidden");
+  await renderPatchPicker("");
+}
+
+async function renderPatchPicker(dir) {
+  modalBody.innerHTML = `<p class="empty">正在读取目录…</p>`;
+  let d;
+  try {
+    d = await api(`/api/fs/list${dir ? `?path=${encodeURIComponent(dir)}` : ""}`);
+  } catch (e) {
+    modalBody.innerHTML = `<p class="empty">读取目录失败：${esc(e.message)}</p>`;
+    return;
+  }
+
+  modalBody.innerHTML = `
+    <div class="settings">
+      <h2>打 Goldberg 补丁</h2>
+      <p class="hint">选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）。会自动识别 AppID、生成成就清单、备份并替换模拟器 DLL。</p>
+
+      <div class="field">
+        <label>当前目录</label>
+        <div class="path-row">
+          <input id="p-dir" type="text" value="${esc(d.path)}" placeholder="选一个盘符开始">
+          <button id="p-go" class="btn btn-ghost">打开</button>
+          ${d.parent !== null ? `<button id="p-up" class="btn btn-ghost">↑ 上一级</button>` : ""}
+        </div>
+        <div class="hint">${d.isGame
+          ? `✅ 看起来是游戏目录${d.appid ? `，AppID = <b>${esc(d.appid)}</b>` : "（缺 steam_appid.txt，可能识别不到 AppID）"}`
+          : "继续往下选到游戏目录"}</div>
+      </div>
+
+      <div class="field">
+        <label>子目录</label>
+        <div class="picker">${d.dirs.length
+          ? d.dirs.map((x) => `<div class="pick" data-path="${esc(x.path)}">📁 ${esc(x.name)}</div>`).join("")
+          : "<div class='hint'>（没有子目录）</div>"}</div>
+      </div>
+
+      <div class="row">
+        <button id="p-apply" class="btn" ${d.path ? "" : "disabled"}>开始打补丁</button>
+        <span id="p-msg" class="hint"></span>
+      </div>
+    </div>`;
+
+  modalBody.querySelectorAll(".pick").forEach((el) =>
+    el.addEventListener("click", () => renderPatchPicker(el.dataset.path))
+  );
+  $("#p-go").addEventListener("click", () => renderPatchPicker($("#p-dir").value.trim()));
+  if ($("#p-up")) $("#p-up").addEventListener("click", () => renderPatchPicker(d.parent));
+  $("#p-apply").addEventListener("click", () => applyPatch(d.path));
+}
+
+async function applyPatch(dir) {
+  const btn = $("#p-apply");
+  const msg = $("#p-msg");
+  btn.disabled = true;
+  msg.textContent = "处理中：拉取成就清单 → 下载图标 → 备份原 DLL → 替换…（可能 1-2 分钟）";
+  try {
+    const r = await api("/api/emu/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir, withIcons: true }),
+    });
+    modalBody.innerHTML = `
+      <div class="settings">
+        <h2>✅ 补丁完成</h2>
+        <div class="dirlist">
+          <div>AppID：<b>${esc(r.appid)}</b></div>
+          <div>游戏目录：${esc(r.exeDir || r.gameDir)}</div>
+          <div>替换文件 ${r.replaced} 个（原文件备份为 <code>.aw2bak</code>），写入配置 ${r.written} 个</div>
+          <div>成就清单：${r.settingsDirs.map((s) => `${esc(s.dir)} → ${s.total} 条${s.icons ? `，图标 ${s.icons.ok} 张` : ""}`).join("<br>")}</div>
+          <div>Steam 成就数据：${r.schema === "downloaded" ? "已下载到本地" : r.schema === "cached" ? "已有缓存" : `下载失败（${esc(r.schemaError || "网络问题")}）`}</div>
+        </div>
+        <p class="hint">现在可以直接启动游戏。想撤销就在命令行运行 <code>node src\\cli.js emu-restore ${esc(r.appid)}</code>。</p>
+        <div class="row"><button class="btn" id="p-done">知道了</button></div>
+      </div>`;
+    $("#p-done").addEventListener("click", () => { closeModal(); loadLibrary(true); });
+    toast("补丁已应用");
+  } catch (e) {
+    msg.textContent = `失败：${e.message}`;
+    btn.disabled = false;
   }
 }
 
@@ -304,6 +421,8 @@ $("#sort").addEventListener("change", (e) => {
   if (state.lib) renderGrid();
 });
 $("#refresh").addEventListener("click", () => loadLibrary(true));
+$("#prefetch").addEventListener("click", (e) => prefetchAchievements(e.currentTarget));
+$("#patch").addEventListener("click", openPatchDialog);
 $("#settings").addEventListener("click", () => { location.hash = "settings"; });
 $("#modal-close").addEventListener("click", closeModal);
 modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
