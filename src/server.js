@@ -336,7 +336,8 @@ async function prefetchAllAchievements(force = false) {
 
 // 检测游戏目录是否已被打过补丁（轻量：只看当前目录的文件，不递归）
 function detectPatchState(dir, entries) {
-  const has = (name) => entries.some((e) => e.isFile() && e.name.toLowerCase() === name);
+  const has = (name) => entries.some((e) => e.isFile() && e.name.toLowerCase() === name.toLowerCase());
+  const hasDir = (name) => entries.some((e) => e.isDirectory() && e.name.toLowerCase() === name.toLowerCase());
   const dllName = ["steam_api64.dll", "steam_api.dll"].find(has) || null;
 
   let goldbergDll = false;
@@ -348,11 +349,31 @@ function detectPatchState(dir, entries) {
     } catch { /* 读不到就当未知 */ }
   }
 
+  // 其他破解组/模拟器的特征文件（各下载站打包风格不一，认常见几种）
+  const OTHER_EMU = [
+    { group: "RUNE", files: ["steam_emu.ini", "RUNE.ini"] },
+    { group: "CODEX", files: ["codex.ini"] },
+    { group: "3DM", files: ["3DMGAME.ini"] },
+    { group: "SmartSteamEmu", files: ["SmartSteamEmu.ini"] },
+  ];
+  const otherEmu = OTHER_EMU.filter((k) => k.files.some(has)).map((k) => k.group);
+  const settingsDir = hasDir("steam_settings");
+
+  // 状态归类：goldberg=已打 Goldberg 系补丁；other=被其他模拟器接管；vanilla=原版 Steam DLL；nodll=目录里没有 DLL
+  let state = "nodll";
+  if (goldbergDll || settingsDir) state = "goldberg";
+  else if (otherEmu.length) state = "other";
+  else if (dllName) state = "vanilla";
+
   return {
     dll: dllName,
     goldbergDll,                                        // DLL 本身像 Goldberg/gbe_fork 系
-    achConfig: has(path.join("steam_settings", "achievements.json")), // 成就清单已生成
+    settingsDir,                                        // 有 steam_settings 目录（Goldberg 系补丁产物）
+    // 成就清单是嵌套路径，entries 只有顶层项，必须直接探文件
+    achConfig: fs.existsSync(path.join(dir, "steam_settings", "achievements.json")),
     backup: ["steam_api64.dll.aw2bak", "steam_api.dll.aw2bak"].some(has), // aw2 打过补丁（有备份）
+    otherEmu,                                           // 检测到的其他模拟器名
+    state,
   };
 }
 

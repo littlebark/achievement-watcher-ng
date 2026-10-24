@@ -214,17 +214,27 @@ async function renderPatchPicker(dir) {
     return;
   }
 
-  let status = d.isGame
-    ? `✅ 看起来是游戏目录${d.appid ? `，AppID = <b>${esc(d.appid)}</b>` : "（缺 steam_appid.txt，可能识别不到 AppID）"}`
-    : "继续往下选到游戏目录";
-  if (d.isGame && d.patch) {
-    const bits = [];
-    if (d.patch.backup) bits.push("已被 aw2 打过补丁（存在 .aw2bak 备份）");
-    else if (d.patch.goldbergDll) bits.push("DLL 疑似已是 Goldberg/gbe_fork 系模拟器");
-    if (d.patch.achConfig) bits.push("成就清单已生成（steam_settings/achievements.json）");
-    if (bits.length) {
-      status += `<br>⚠ 已检测到：${bits.join("；")}。<b>一般无需重复打补丁</b>；重复执行也不会丢原文件（首次备份会保留），但会刷新成就清单。`;
-    }
+  // 补丁状态：用户最想知道"这游戏现在是什么状态、要不要打"
+  const patch = d.patch || {};
+  const idLine = d.appid
+    ? `识别到 AppID = <b>${esc(d.appid)}</b>`
+    : "没找到 steam_appid.txt，识别不到 AppID（补丁会失败）";
+  let status;
+  if (!d.isGame) {
+    status = "请选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）";
+  } else if (patch.state === "goldberg") {
+    const extra = [];
+    extra.push(patch.backup ? "由本工具打的（留了 .aw2bak 备份）" : "由下载站/破解组打的");
+    extra.push(patch.achConfig ? "成就清单已生成" : "但缺少成就清单，建议再打一次补齐全成就列表");
+    status = `✅ <b>已经是 Goldberg 系模拟器</b>，可直接启动游戏，无需再打补丁。<br>${idLine}；${extra.join("，")}。` +
+      `<br><span style="color:#9aa0a6">仍可点「开始打补丁」刷新成就清单/图标、换游戏内用户名；原 DLL 备份会保留。</span>`;
+  } else if (patch.state === "other") {
+    status = `⚠️ <b>检测到其他模拟器补丁：${esc(patch.otherEmu.join(" / "))}</b>。${idLine}。<br>` +
+      `继续打补丁会把它换成 Goldberg（原 DLL 自动备份为 .aw2bak，可回滚）；注意换模拟器后<b>原解放记录可能读不到</b>（各模拟器存档位置不同）。`;
+  } else if (patch.state === "vanilla") {
+    status = `❌ <b>未打补丁</b>（原版 Steam DLL）。${idLine}。<br>可以打补丁：替换为 Goldberg 模拟器并生成成就清单。`;
+  } else {
+    status = `⚠️ 这个目录里没有 steam_api64.dll / steam_api.dll，可能不是游戏根目录。<br>${idLine}`;
   }
 
   modalBody.innerHTML = `
@@ -234,21 +244,12 @@ async function renderPatchPicker(dir) {
       ${d.path && d.wallSet === false ? `<div class="hint" style="color:#d8b168">提示：成就墙当前已关闭。打补丁和成就下载不受影响，但解锁成就不会同步到成就墙——可在 ⚙ 设置 里重新开启。</div>` : ""}
 
       <div class="field">
-        <label>当前目录</label>
+        <label>游戏根目录</label>
         <div class="path-row">
-          <input id="p-dir" type="text" value="${esc(d.path)}" placeholder="粘贴路径，或点右侧选择文件夹">
+          <input id="p-dir" type="text" value="${esc(d.path)}" placeholder="粘贴游戏文件夹路径，或点右侧按钮选择">
           <button id="p-pick" class="btn btn-ghost" title="弹出系统文件夹选择框">选择文件夹…</button>
-          <button id="p-go" class="btn btn-ghost" title="进入该目录，列出子目录">前往</button>
-          ${d.parent !== null ? `<button id="p-up" class="btn btn-ghost" title="返回上一级">↑ 上一级</button>` : ""}
         </div>
-        <div class="hint">${status}</div>
-      </div>
-
-      <div class="field">
-        <label>子目录</label>
-        <div class="picker">${d.dirs.length
-          ? d.dirs.map((x) => `<div class="pick" data-path="${esc(x.path)}">📁 ${esc(x.name)}</div>`).join("")
-          : "<div class='hint'>（没有子目录）</div>"}</div>
+        <div class="hint" style="margin-top:8px;line-height:1.7">${status}</div>
       </div>
 
       <div class="field">
@@ -258,16 +259,12 @@ async function renderPatchPicker(dir) {
       </div>
 
       <div class="row">
-        <button id="p-apply" class="btn" ${d.path ? "" : "disabled"}>开始打补丁</button>
+        <button id="p-apply" class="btn" ${d.isGame && d.appid ? "" : "disabled"}>开始打补丁</button>
         <span id="p-msg" class="hint"></span>
       </div>
     </div>`;
 
-  modalBody.querySelectorAll(".pick").forEach((el) =>
-    el.addEventListener("click", () => renderPatchPicker(el.dataset.path))
-  );
   $("#p-user").addEventListener("input", (e) => { patchUserDraft = e.target.value; });
-  $("#p-go").addEventListener("click", () => renderPatchPicker($("#p-dir").value.trim()));
   $("#p-pick").addEventListener("click", async () => {
     if (!window.aw2Panel?.pickFolder) {
       alert("浏览器模式不支持系统选择框，请直接在输入框粘贴文件夹路径（用桌面版 exe 会有选择按钮）");
@@ -276,7 +273,10 @@ async function renderPatchPicker(dir) {
     const picked = await window.aw2Panel.pickFolder($("#p-dir").value.trim());
     if (picked) renderPatchPicker(picked);
   });
-  if ($("#p-up")) $("#p-up").addEventListener("click", () => renderPatchPicker(d.parent));
+  // 手动粘贴路径后按回车也能识别
+  $("#p-dir").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") renderPatchPicker(e.target.value.trim());
+  });
   $("#p-apply").addEventListener("click", () => applyPatch(d.path));
 }
 
@@ -301,8 +301,9 @@ async function applyPatch(dir) {
           <div>AppID：<b>${esc(r.appid)}</b></div>
           <div>游戏目录：${esc(r.exeDir || r.gameDir)}</div>
           <div>替换文件 ${r.replaced} 个（原文件备份为 <code>.aw2bak</code>），写入配置 ${r.written} 个</div>
-          ${r.detectedBefore && (r.detectedBefore.goldbergDll || r.detectedBefore.achConfig || r.detectedBefore.backup)
+          ${r.detectedBefore && (r.detectedBefore.goldbergDll || r.detectedBefore.achConfig || r.detectedBefore.backup || r.detectedBefore.otherEmu?.length)
             ? `<div>打补丁前检测：${[
+                r.detectedBefore.otherEmu?.length && `其他模拟器（${esc(r.detectedBefore.otherEmu.join("/"))}）`,
                 r.detectedBefore.goldbergDll && "已有 Goldberg 系 DLL",
                 r.detectedBefore.achConfig && "已有成就清单（本次已刷新）",
                 r.detectedBefore.backup && "已有 .aw2bak 备份（保留首次备份）",
@@ -312,7 +313,7 @@ async function applyPatch(dir) {
           ${r.accountName ? `<div>游戏内用户名：<b>${esc(r.accountName)}</b>（下次进游戏生效）</div>` : ""}
           <div>Steam 成就数据：${r.schema === "downloaded" ? "已下载到本地" : r.schema === "cached" ? "已有缓存" : `下载失败（${esc(r.schemaError || "网络问题")}）`}</div>
         </div>
-        <p class="hint">现在可以直接启动游戏。想撤销就在命令行运行 <code>node src\\cli.js emu-restore ${esc(r.appid)}</code>。</p>
+        <p class="hint">现在可以直接启动游戏。想撤销：把游戏目录里的 <code>steam_api64.dll.aw2bak</code> 改名回 <code>steam_api64.dll</code> 即可（命令行用户也可用 <code>node src\\cli.js emu-restore ${esc(r.appid)}</code>）。</p>
         <div class="row"><button class="btn" id="p-done">知道了</button></div>
       </div>`;
     $("#p-done").addEventListener("click", () => { closeModal(); loadLibrary(true); });
