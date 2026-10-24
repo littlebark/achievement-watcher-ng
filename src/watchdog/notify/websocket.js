@@ -40,7 +40,15 @@ export function startWebSocket({ port = 8083, auth = null } = {}) {
       try {
         const req = JSON.parse(data.toString());
         if (req.cmd === "test") {
-          client.send(JSON.stringify(testPayload()));
+          // 广播到所有客户端（桌面版弹窗/OBS overlay），普通+稀有一并验证
+          broadcast(testPayload());
+          broadcast({
+            ...testPayload(),
+            displayName: "Legendary Winner",
+            description: "Win one game. （稀有测试）",
+            rare: true,
+            rarePercent: 0.9,
+          });
         }
       } catch { /* ignore */ }
     });

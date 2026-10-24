@@ -655,25 +655,27 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-function listen(port) {
+function listen(port, { onBusy = null, autoOpen = true } = {}) {
   // 端口固定不自动跳号：跳号会让用户不知道面板在哪。被占用时明确报错。
+  // onBusy：嵌入模式（Electron 桌面版）传入——端口被占不退出进程，只回调提示。
   server.once("error", (err) => {
     if (err.code === "EADDRINUSE") {
       log.error(`[UI] 端口 ${port} 被占用（注意 QQ 等应用常驻 8082）。请关掉占用它的程序，或用环境变量 AW2_UI_PORT 指定其他端口后重试。`);
+      if (onBusy) { onBusy(port); return; }
       console.error(`\n端口 ${port} 已被占用，面板无法启动。`);
       console.error(`  - 关闭占用该端口的程序后重试，或`);
       console.error(`  - 临时换端口：set AW2_UI_PORT=5180 && node src\\cli.js ui\n`);
     } else {
       log.error(`[UI] ${err.message}`);
     }
-    process.exit(1);
+    if (!onBusy) process.exit(1);
   });
   server.listen(port, "127.0.0.1", () => {
     const url = `http://127.0.0.1:${port}`;
     log.info(`[UI] ${url}`);
     console.log(`aw2 面板已启动：${url}`);
     console.log("（关闭此窗口即停止面板；watchdog 可独立运行）");
-    if (!process.env.AW2_NO_OPEN) openBrowser(url);
+    if (autoOpen && !process.env.AW2_NO_OPEN) openBrowser(url);
   });
 }
 
@@ -683,8 +685,8 @@ function openBrowser(url) {
   } catch { /* 用户手动打开 */ }
 }
 
-export function startUI(port = START_PORT) {
-  listen(port);
+export function startUI(port = START_PORT, opts = {}) {
+  listen(port, opts);
   return server;
 }
 

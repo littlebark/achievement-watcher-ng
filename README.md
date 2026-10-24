@@ -10,11 +10,22 @@ Node 22+ ESM，仅依赖 `ws`，无原生模块。
 Toast/WebSocket 通知形态均参考原项目。代码为独立重写（Node ESM、零原生依赖），未复制原项目源码，
 故同样以 [LGPL-3.0](LICENSE) 发布。感谢原作者 xan105。
 
-## 快速开始（双击即可）
+## 快速开始（新人三步）
+
+1. **装环境**：Node.js 18+，然后在项目目录执行 `npm install`；再进 `electron\` 执行一次 `npm install`（Electron 桌面版运行时）
+2. **填 API Key**：`node src\cli.js setkey <KEY>`（[免费申请](https://steamcommunity.com/dev/apikey)）
+3. **双击 `aw2-desktop.vbs`**：右下角出现奖杯托盘图标即启动成功（后台监视 + 自绘弹窗 + 面板服务全在这一个进程里）
+
+之后所有配置（游戏目录、下载成就、打补丁、音效、稀有阈值）都在面板里改：**点托盘图标**或浏览器打开 `http://127.0.0.1:5179`。成就解锁时右下角滑入 Xbox 风格卡片（普通绿条 5 秒 / 稀有金条 10 秒，稀有音效可自备）。
+
+> 不想用桌面版？`start-ui.bat` + `start-watchdog.bat` 是等价的手动组合（面板与本机 Node 环境独立跑）。
+
+## 脚本一览
 
 | 脚本 | 作用 |
 | --- | --- |
-| `start-ui.bat` | 打开图形面板（游戏库 / 成就详情 / 设置），自动开浏览器 `http://127.0.0.1:5179` |
+| `aw2-desktop.vbs` | **推荐入口**：Electron 桌面版（后台监视 + 自绘弹窗 + 内置面板 + 托盘图标），静默运行 |
+| `start-ui.bat` | 只启动图形面板（游戏库 / 成就详情 / 设置），自动开浏览器 `http://127.0.0.1:5179` |
 | `start-watchdog.bat` | 启动后台通知（带日志窗口，测试用） |
 | `aw2-hidden.vbs` | 无窗口隐藏启动后台通知（带崩溃自动重启） |
 | `stop-watchdog.bat` | 停止后台通知（只动 aw2 自己的进程） |
@@ -274,3 +285,11 @@ node src\cli.js path reset <字段>                    :: 恢复内置默认
 - **打补丁可设置游戏内用户名**（`699219b`）：网页打补丁弹窗新增可选输入框，写入游戏 `steam_settings\configs.user.ini` 的 `account_name`（可覆盖下载站预置的名字）；留空时按「全局 GSE 配置 → Windows 用户名」取默认。CLI 对应 `emu-apply --user <名字>`。
 - **修复：解锁事件被丢弃**（`d0aa9da`）：Windows 下成就文件被「写临时文件再改名」替换时上报的是 `rename` 事件，此前只处理 `change`；同时原「文件必须 1 秒内修改才算新写入」的墙钟判断会丢掉延迟投递的事件。现改为接受 `change`/`rename`、按 mtime 去重、同一文件串行处理（防重复弹窗），实测可稳定触发 `[UNLOCK]` → `[NOTIFY]`。
 - **修复：新游戏解锁漏通知**（`9c5f5c3`）：watchdog 现在每 60 秒（`AW2_RESCAN_MS` 可调）重新发现成就目录——此前只认启动时已存在的目录，游戏「首次运行」才生成的存档目录（如 `GSE Saves\<appid>`）永远不会被监视，导致解锁不弹通知；目录消失时自动摘除监视。
+- **桌面版（Electron）上线**：新增 `electron/` 子目录，架构为「主进程内置 watchdog（复用原 Node 代码）→ WS 广播 → 无边框透明置顶窗口渲染 Xbox 风格卡片」。成就弹窗改为自绘卡片（普通=绿条 5 秒 / 稀有=金条+◆ 10 秒），全屏游戏下也能覆盖显示，不再依赖系统 Toast（顺带解决 PowerShell 出戏问题）。双击 `aw2-desktop.vbs` 启动，完全静默运行。本日交付要点：
+  - **顺序队列播放**：一次只显示一张卡片，播完（进→停→退）再弹下一张；队列上限 10 条防积压；音效跟随卡片登场；悬停暂停消失、移开 2 秒宽限、点击打开面板。
+  - **修复：弹窗无声无卡**：preload.js 误用 ESM `import`（sandbox 渲染进程按 CommonJS 解析 preload），桥未加载导致 `window.aw2` 不存在、通知注册不上；已改 CommonJS，`overlay.js` 加 `?.` 防御。
+  - **诊断日志**：主进程记录 preload 出错 / 页面加载失败 / 渲染进程退出 / renderer console 错误（`data\logs\aw2-desktop.log`），排查「静默没反应」不再盲猜。
+  - **测试广播修复**：WS `cmd:test` 原先只回给请求方，现广播到所有客户端（含弹窗与 OBS overlay），并附带普通+稀有两张测试卡片。
+  - **开机自启**：启动文件夹放置 `Achievement Watcher Desktop.vbs`（隐藏启动，链 `aw2-desktop.vbs`）；旧版 `Achievement Watcher NG.vbs` 已停用（重命名为 `.disabled`）。
+  - **内置面板 + 托盘图标**：桌面版主进程直接 `startUI()`（复用原面板服务），`http://127.0.0.1:5179` 随桌面版常驻，改配置点托盘图标即可；托盘左键开面板、右键菜单可退出。端口被占时只记日志（不再误杀整个桌面版）。`start-ui.bat` 仍保留给不用桌面版的场景。
+
