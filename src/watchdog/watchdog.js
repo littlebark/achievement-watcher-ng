@@ -231,8 +231,11 @@ export async function startWatchdog() {
     }, 1500).unref?.();
   }
 
-  const watchers = [];
-  for (const folder of folders) {
+  // 挂监视。目录 key 用小写绝对路径去重（Windows 不区分大小写），重复调用不会重复挂。
+  const watchers = new Map(); // key -> { watcher, folder }
+  function attachWatcher(folder) {
+    const key = path.resolve(folder.dir).toLowerCase();
+    if (watchers.has(key)) return false;
     try {
       const watcher = fs.watch(folder.dir, { recursive: true }, async (eventType, filename) => {
         if (eventType !== "change" || !filename) return;
@@ -245,21 +248,70 @@ export async function startWatchdog() {
         catch (e) { log.warn(`[WATCH] ${e.message}`); }
       });
       watcher.on("error", (e) => log.warn(`[WATCH] ${folder.dir}: ${e.message}`));
-      watchers.push(watcher);
+      watchers.set(key, { watcher, folder });
       log.info(`[WATCH] ${folder.source}: ${folder.dir} (${folder.files.join(", ")}) appid=${folder.appid ?? "?"}`);
+      return true;
     } catch (e) {
       log.warn(`[WATCH] 无法监视 ${folder.dir}: ${e.message}`);
+      return false;
     }
   }
+  for (const folder of folders) attachWatcher(folder);
 
-  // 配置热重载（简化版：watchdog 进程退出后手动重启；后续版本做自动 reload）
-  log.info("watchdog 就绪。Ctrl+C 退出。");
+  // 定期重新发现：游戏「首次运行」后才生成的成就目录（如 GSE Saves\<appid>）必须补挂监视，
+  // 否则新装的游戏解锁成就会被漏掉——启动时那个目录还不存在。
+  // 已消失的目录顺带摘掉，避免 fs.watch 报错刷屏。
+  const RESCAN_MS = Number(process.env.AW2_RESCAN_MS) || 60000;
+  let rescanning = false;
+  async function rescan() {
+    if (rescanning) return;
+    rescanning = true;
+    try {
+      const dirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
+      const next = await getWatchFolders({ userDirs: dirs });
+      const added = next.filter((f) => attachWatcher(f));
+
+      for (const [key, { watcher, folder }] of watchers) {
+        if (await exists(folder.dir)) continue;
+        try { watcher.close(); } catch { /* ignore */ }
+        watchers.delete(key);
+        log.info(`[WATCH-] 目录已消失，停止监视: ${folder.dir}`);
+      }
+
+      if (added.length) {
+        const ids = [...new Set(added.map((f) => f.appid).filter(Boolean))];
+        log.info(`[WATCH+] 新增 ${added.length} 个成就目录${ids.length ? `（appid: ${ids.join(", ")}）` : ""}`);
+        if (ids.length) {
+          prefetchSchemas({
+            appids: ids,
+            lang: cfg.lang,
+            apiKey: cfg._primaryKey,
+            fallbackKey: cfg._fallbackKey,
+            concurrency: 2,
+          })
+            .then((r) => log.info(`[WATCH+] 新目录成就数据：下载 ${r.ok.length}，缓存 ${r.cached.length}，失败 ${r.failed.length}`))
+            .catch((e) => log.warn(`[WATCH+] 预取失败：${e.message}`));
+        }
+      }
+    } catch (e) {
+      log.warn(`[RESCAN] ${e.message}`);
+    } finally {
+      rescanning = false;
+    }
+  }
+  const rescanTimer = setInterval(rescan, RESCAN_MS);
+  rescanTimer.unref?.();
+
+  log.info(`watchdog 就绪。Ctrl+C 退出（每 ${Math.round(RESCAN_MS / 1000)} 秒自动检查有没有新的成就目录）`);
 
   process.on("SIGINT", () => {
     log.info("watchdog stopping ...");
-    watchers.forEach((w) => w.close());
+    clearInterval(rescanTimer);
+    for (const { watcher } of watchers.values()) {
+      try { watcher.close(); } catch { /* ignore */ }
+    }
     process.exit(0);
   });
 
-  return { cfg, folders, watchers };
+  return { cfg, folders, watchers: [...watchers.values()].map((w) => w.watcher) };
 }
