@@ -30,6 +30,7 @@ async function loadGame(appID, cfg) {
 }
 
 async function notify(achievement, game, options, delay = 0) {
+  const isLast = options.isLast === true; // 全成就达成：固定按稀有处理
   const payload = {
     appID: Number(game.appid) || game.appid,
     game: game.name,
@@ -58,7 +59,7 @@ async function notify(achievement, game, options, delay = 0) {
       }
     } catch { /* 不阻塞 */ }
   }
-  payload.rare = rare;
+  payload.rare = rare || isLast;
   if (rare) payload.rarePercent = rarePercent;
 
   // Toast
@@ -71,10 +72,12 @@ async function notify(achievement, game, options, delay = 0) {
         message: `${payload.game} — ${payload.description || "Achievement unlocked!"}`,
         icon,
         appId: options.cfg.toast?.appId,
-        sound: rare ? options.cfg.sound?.rare : options.cfg.sound?.normal,
-        attribution: rare && rarePercent != null
-          ? `稀有成就 · 全球仅 ${rarePercent.toFixed(1)}% 玩家解锁`
-          : null,
+        sound: rare || isLast ? options.cfg.sound?.rare : options.cfg.sound?.normal,
+        attribution: isLast
+          ? `全成就达成！${rare && rarePercent != null ? ` · 稀有成就 · 全球仅 ${rarePercent.toFixed(1)}%` : ""}`
+          : rare && rarePercent != null
+            ? `稀有成就 · 全球仅 ${rarePercent.toFixed(1)}% 玩家解锁`
+            : null,
       });
       log.info(`[NOTIFY] ${payload.game} :: ${payload.displayName}${rare ? ` [稀有 ${rarePercent?.toFixed(1)}%]` : ""}`);
     } catch (e) {
@@ -128,6 +131,10 @@ async function handleFileChange(folder, filePath, cfg) {
   const pairs = matchAchievements(game.achievement.list, entries);
   const previous = await track.load(appID);
 
+  // 全成就判定：本地文件覆盖了全部 schema 成就，且本次读取后全部已解锁
+  const total = game.achievement.list.length;
+  const allDone = total > 0 && pairs.length === total && pairs.every((p) => p.local.Achieved);
+
   let j = 0;
   const merged = [];
   for (const pair of pairs) {
@@ -142,8 +149,8 @@ async function handleFileChange(folder, filePath, cfg) {
       const unlockTime = cur.UnlockTime || Math.floor(Date.now() / 1000);
       const elapsed = Date.now() / 1000 - unlockTime;
       if (folder.disableTimestampCheck || (elapsed >= 0 && elapsed <= cfg.timeThreshold)) {
-        log.info(`[UNLOCK] ${game.name} :: ${pair.schemaAchievement.displayName}`);
-        await notify(pair, game, { cfg }, j++);
+        log.info(`[UNLOCK] ${game.name} :: ${pair.schemaAchievement.displayName}${allDone ? " [全成就]" : ""}`);
+        await notify(pair, game, { cfg, isLast: allDone }, j++);
       } else {
         log.info(`[SKIP-OLD] ${pair.schemaAchievement.displayName} (解锁于 ${Math.floor(elapsed)}s 前)`);
       }
