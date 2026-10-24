@@ -136,22 +136,24 @@
     .card.light .badge { color: #8a6408; background: rgba(232, 195, 82, 0.18); border-color: rgba(184, 134, 11, 0.35); }
     .card.light .progress { background: #e6e8eb; }
 
-    /* 4. steam：Steam 蓝调横幅，图标更大、标题更重 */
+    /* 4. steam：Steam 蓝调横幅，图标更大、标题更重（已定为默认样式） */
     .card.steam {
       background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%);
       border: 1px solid rgba(102, 192, 244, 0.28);
       box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
       border-radius: 4px;
-      padding: 16px 18px;
+      padding: 18px 20px;
     }
     .card.steam::before {
       width: 4px;
       background: linear-gradient(180deg, #66c0f4, #2a6f97);
     }
-    .card.steam .icon { width: 64px; height: 64px; border-radius: 4px; }
-    .card.steam .game { color: #66c0f4; font-size: 11px; }
-    .card.steam .title { font-size: 17px; margin: 3px 0 4px; }
-    .card.steam .desc { color: #b8c6d4; }
+    .card.steam .icon { width: 76px; height: 76px; border-radius: 4px; }
+    .card.steam .game { color: #66c0f4; font-size: 12px; }
+    .card.steam .title { font-size: 18px; margin: 4px 0 5px; }
+    .card.steam .desc { color: #c3d0dc; font-size: 13px; -webkit-line-clamp: 3; }
+    .card.steam .badge { font-size: 12px; }
+    .card.steam .progress { margin-top: 8px; height: 5px; }
     .card.steam .progress > div { background: #66c0f4; }
     .card.steam.rare { border-color: rgba(232, 195, 82, 0.45); }
     .card.steam.rare .game { color: #e8c352; }

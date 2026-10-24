@@ -128,10 +128,10 @@ function previewStyles() {
     description: "这一条用来对比不同通知样式，卡片会在几秒后自动收起。",
   };
   const variants = [
-    { style: "", displayName: "① 经典深色（当前默认）" },
+    { style: "classic", displayName: "① 经典深色（旧默认）" },
     { style: "glass", displayName: "② 毛玻璃" },
     { style: "light", displayName: "③ 浅色卡片" },
-    { style: "steam", displayName: "④ Steam 蓝调" },
+    { style: "steam", displayName: "④ Steam 蓝调（当前默认）" },
     { style: "minimal", displayName: "⑤ 极简单行" },
     { style: "xbox", displayName: "⑥ Xbox 风格" },
   ];

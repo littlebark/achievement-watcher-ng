@@ -41,8 +41,10 @@ function pump() {
 function addCard(p) {
   const rare = !!p.rare;
   const card = document.createElement("div");
-  // style 仅用于样式预览（classic/glass/light/steam/minimal），正常通知不带该字段
-  const styleClass = ["glass", "light", "steam", "minimal", "xbox"].includes(p.style) ? " " + p.style : "";
+  // 样式：默认 Steam 蓝调；style 字段仅用于预览切换（classic = 旧默认深色）
+  const STYLES = ["glass", "light", "steam", "minimal", "xbox", "classic"];
+  const styleName = STYLES.includes(p.style) ? p.style : "steam";
+  const styleClass = styleName !== "classic" ? " " + styleName : "";
   card.className = "card" + styleClass + (rare ? " rare" : "");
 
   // 图标：Steam CDN 直链，加载失败回落奖杯
