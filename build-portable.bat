@@ -1,14 +1,24 @@
 @echo off
 rem Build single-file portable exe
-rem Force China mirrors (github.com is unreachable without proxy here)
+rem Usage:
+rem   build-portable.bat        -> compressed (normal, smaller, for distribution)
+rem   build-portable.bat fast   -> no compression (store, fastest, for local testing)
+rem China mirrors avoid github.com timeouts
 cd /d "%~dp0"
 
 set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 set ELECTRON_CUSTOM_DIR={{ version }}
 set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
 
-echo Building aw2-desktop-portable.exe (mirror: npmmirror) ...
-node node_modules\electron-builder\cli.js --win portable
+if "%~1"=="fast" (
+  set COMP=-c.compression=store
+  echo Building FAST mode [no compression, large exe] ...
+) else (
+  set COMP=-c.compression=normal
+  echo Building COMPRESSED mode [normal, smaller exe, takes a few minutes] ...
+)
+
+node node_modules\electron-builder\cli.js --win portable %COMP%
 if errorlevel 1 (
   echo.
   echo [FAILED] Build failed. Check the error lines above.
