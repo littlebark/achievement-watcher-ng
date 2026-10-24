@@ -9,11 +9,9 @@ cd /d "%~dp0"
 rem Guard: electron-builder must delete dist\win-unpacked, which fails if the app is running from it
 tasklist /FI "IMAGENAME eq Achievement Watcher NG.exe" 2>nul | find /I "Achievement Watcher NG.exe" >nul
 if not errorlevel 1 (
-  echo [WARN] The app is still running from dist\win-unpacked.
-  echo        Please exit it first: tray icon -^> right click -^> Quit
-  echo.
-  pause
-  exit /b 1
+  echo [INFO] App still running ^(Electron keeps several processes^), terminating it ...
+  taskkill /F /IM "Achievement Watcher NG.exe" >nul 2>&1
+  timeout /t 2 /nobreak >nul
 )
 
 set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
