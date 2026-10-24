@@ -1,0 +1,63 @@
+{
+  "comment": "内置模拟器成就存档目录表（数据驱动，加新模拟器只需在此追加）。dir 支持 %ENV% 与 {mydocs} 占位。",
+  "builtin": [
+    {
+      "source": "Codex",
+      "dir": ["%Public%/Documents/Steam/CODEX", "%APPDATA%/Steam/CODEX"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["achievements.ini"] }
+    },
+    {
+      "source": "Goldberg",
+      "dir": ["%APPDATA%/Goldberg SteamEmu Saves"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["achievements.json", "achievements.ini"] }
+    },
+    {
+      "source": "Goldberg (EMPRESS)",
+      "dir": ["%APPDATA%/EMPRESS", "%Public%/Documents/EMPRESS"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+\\\\remote\\\\[0-9]+", "files": ["achievements.json"] },
+      "pathSuffix": "remote/{appid}"
+    },
+    {
+      "source": "Reloaded - 3DM",
+      "dir": ["%PROGRAMDATA%/Steam"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+\\\\stats", "files": ["achievements.ini"], "disableProcessCheck": true, "disableTimestampCheck": true }
+    },
+    {
+      "source": "Skidrow",
+      "dir": ["%LOCALAPPDATA%/SKIDROW", "{mydocs}/SKIDROW"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["stats.bin"] }
+    },
+    {
+      "source": "SmartSteamEmu",
+      "dir": ["%APPDATA%/SmartSteamEmu"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["stats.bin"] }
+    },
+    {
+      "source": "CreamAPI",
+      "dir": ["%APPDATA%/CreamAPI"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["stats/CreamAPI.Achievements.cfg", "achievements.ini"] }
+    },
+    {
+      "source": "RUNE",
+      "dir": ["%Public%/Documents/Steam/RUNE"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["achievements.ini", "Achievements.ini"] }
+    },
+    {
+      "source": "OnlineFix",
+      "dir": ["%Public%/Documents/OnlineFix"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["Achievements.ini", "achievements.ini"] }
+    }
+  ],
+  "achievementFiles": [
+    "achievements.ini",
+    "achievements.json",
+    "achiev.ini",
+    "stats.ini",
+    "Achievements.Bin",
+    "achieve.dat",
+    "Achievements.ini",
+    "stats/achievements.ini",
+    "stats.bin",
+    "stats/CreamAPI.Achievements.cfg"
+  ]
+}

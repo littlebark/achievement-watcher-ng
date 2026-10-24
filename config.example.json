@@ -1,0 +1,41 @@
+{
+  "_说明": "复制本文件内容到数据目录的 aw2.json 修改（默认 %APPDATA%\\Achievement Watcher\\aw2.json；项目根创建 portable.flag 空文件后为 <项目>\\data\\aw2.json）。所有字段均可省略，省略即用默认值。steamApiKey 用 node src\\cli.js setkey 设置（加密存储），不要手填明文。",
+
+  "lang": "schinese",
+  "steamApiKey": "",
+  "steamApiFallbackKey": "",
+  "timeThreshold": 10,
+  "tick": 600,
+  "checkProcessRunning": false,
+  "iconPrefetch": true,
+  "notify": true,
+
+  "websocket": { "enabled": true, "port": 8082, "auth": null },
+  "action": { "target": "", "cwd": "", "hide": true },
+  "toast": { "appId": null },
+
+  "wall": {
+    "_说明": "成就墙导出目录；空字符串 = 关闭（不导出、watchdog 不实时同步）",
+    "dir": ""
+  },
+
+  "paths": {
+    "_说明": "全部可省略；数组留空 [] 用内置默认（见下），个人路径写在这里。数组按顺序取优先级。",
+
+    "_gameSearchDirs_默认": "[]（不自动搜索）",
+    "gameSearchDirs": [
+      "D:\\Games",
+      "E:\\SteamLibrary\\steamapps\\common"
+    ],
+
+    "_emuRoots_默认": "[<数据目录>\\tools\\steam-emu]（恒兜底）",
+    "emuRoots": [
+      "D:\\GameTools\\steam-emu"
+    ],
+
+    "_emuExtraSources_默认": "[]（不额外搜索）",
+    "emuExtraSources": [
+      "D:\\Tools\\GoldbergGUI-0.3.0\\goldberg"
+    ]
+  }
+}

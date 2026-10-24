@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aw2 · 成就库</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>aw2<span class="brand-sub">成就库</span></div>
+  <div class="tools">
+    <input id="search" type="search" placeholder="搜索游戏…" autocomplete="off">
+    <select id="sort" title="排序">
+      <option value="recent">最近解锁</option>
+      <option value="percent-desc">完成度从高到低</option>
+      <option value="percent-asc">完成度从低到高</option>
+      <option value="name">名称</option>
+    </select>
+    <button id="refresh" class="btn">刷新</button>
+    <button id="settings" class="btn btn-ghost">⚙ 设置</button>
+  </div>
+</header>
+
+<section class="profile">
+  <div class="avatar">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="24" r="13"/><path d="M10 60c0-12 10-20 22-20s22 8 22 20z"/></svg>
+  </div>
+  <div class="profile-text">
+    <h1 id="pname">Player</h1>
+    <p class="stats">
+      <span>🏆 <b id="stat-ach">0</b> 成就</span>
+      <span>🎮 <b id="stat-perfect">0</b> 完美达成</span>
+      <span>📊 <b id="stat-avg">0%</b> 平均完成率</span>
+      <span class="muted">共 <b id="stat-games">0</b> 个游戏</span>
+    </p>
+  </div>
+</section>
+
+<main>
+  <div id="grid" class="grid"></div>
+  <p id="empty" class="empty hidden">没有发现成就存档。把游戏目录加入监视列表后再刷新试试。</p>
+  <p id="loading" class="empty">正在读取成就数据…</p>
+</main>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <button class="close" id="modal-close">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
