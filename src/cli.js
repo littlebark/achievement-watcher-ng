@@ -312,7 +312,8 @@ async function main() {
     case "path": return cmdPath(args[0], args[1], ...args.slice(2));
     case "ui": {
       const { startUI } = await import("./server.js");
-      startUI(Number(args[0]) || undefined);
+      const cfg = await loadConfig();
+      startUI(Number(args[0]) || cfg.ui?.port || undefined);
       break;
     }
     case "setkey": return cmdSetKey(args[0]);

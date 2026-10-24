@@ -138,10 +138,30 @@ async function openDetail(appid) {
             </div>
           </div>`).join("") : `
           <p class="empty">
-            这个游戏的成就清单还没下载（离线状态）。<br>
-            点右上角 <b>⬇ 下载成就</b> 补齐后即可显示全部 ${g.total} 个成就。
+            这个游戏的成就清单还没下载（离线状态）。<br><br>
+            <button class="btn" id="d-prefetch">⬇ 下载这个游戏的成就数据</button>
           </p>`}
       </div>`;
+    const dp = $("#d-prefetch");
+    if (dp) {
+      dp.addEventListener("click", async () => {
+        dp.disabled = true;
+        dp.textContent = "下载中…";
+        try {
+          const r = await api("/api/schema/prefetch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ appids: [String(appid)] }),
+          });
+          if (r.ok?.length) { toast("下载完成"); openDetail(appid); }
+          else throw new Error(r.failed?.[0]?.error || "下载失败");
+        } catch (e) {
+          dp.disabled = false;
+          dp.textContent = "⬇ 重试下载";
+          toast(`下载失败：${e.message}`);
+        }
+      });
+    }
   } catch (e) {
     modalBody.innerHTML = `<p class="empty">加载失败：${esc(e.message)}</p>`;
   }
@@ -190,10 +210,24 @@ async function renderPatchPicker(dir) {
     return;
   }
 
+  let status = d.isGame
+    ? `✅ 看起来是游戏目录${d.appid ? `，AppID = <b>${esc(d.appid)}</b>` : "（缺 steam_appid.txt，可能识别不到 AppID）"}`
+    : "继续往下选到游戏目录";
+  if (d.isGame && d.patch) {
+    const bits = [];
+    if (d.patch.backup) bits.push("已被 aw2 打过补丁（存在 .aw2bak 备份）");
+    else if (d.patch.goldbergDll) bits.push("DLL 疑似已是 Goldberg/gbe_fork 系模拟器");
+    if (d.patch.achConfig) bits.push("成就清单已生成（steam_settings/achievements.json）");
+    if (bits.length) {
+      status += `<br>⚠ 已检测到：${bits.join("；")}。<b>一般无需重复打补丁</b>；重复执行也不会丢原文件（首次备份会保留），但会刷新成就清单。`;
+    }
+  }
+
   modalBody.innerHTML = `
     <div class="settings">
       <h2>打 Goldberg 补丁</h2>
-      <p class="hint">选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）。会自动识别 AppID、生成成就清单、备份并替换模拟器 DLL。<b>前提：先在 ⚙ 设置 里配置好「成就墙目录」</b>，否则无法打补丁。</p>
+      <p class="hint">选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）。会自动识别 AppID、生成成就清单、备份并替换模拟器 DLL。打完会顺带把这个游戏的成就数据下载到本地缓存。</p>
+      ${d.path && d.wallSet === false ? `<div class="hint" style="color:#d8b168">提示：成就墙目录还没设置。打补丁和成就下载不受影响，但解锁成就不会同步到成就墙——建议到 ⚙ 设置 里配置一次。</div>` : ""}
 
       <div class="field">
         <label>当前目录</label>
@@ -202,9 +236,7 @@ async function renderPatchPicker(dir) {
           <button id="p-go" class="btn btn-ghost">打开</button>
           ${d.parent !== null ? `<button id="p-up" class="btn btn-ghost">↑ 上一级</button>` : ""}
         </div>
-        <div class="hint">${d.isGame
-          ? `✅ 看起来是游戏目录${d.appid ? `，AppID = <b>${esc(d.appid)}</b>` : "（缺 steam_appid.txt，可能识别不到 AppID）"}`
-          : "继续往下选到游戏目录"}</div>
+        <div class="hint">${status}</div>
       </div>
 
       <div class="field">
@@ -246,6 +278,13 @@ async function applyPatch(dir) {
           <div>AppID：<b>${esc(r.appid)}</b></div>
           <div>游戏目录：${esc(r.exeDir || r.gameDir)}</div>
           <div>替换文件 ${r.replaced} 个（原文件备份为 <code>.aw2bak</code>），写入配置 ${r.written} 个</div>
+          ${r.detectedBefore && (r.detectedBefore.goldbergDll || r.detectedBefore.achConfig || r.detectedBefore.backup)
+            ? `<div>打补丁前检测：${[
+                r.detectedBefore.goldbergDll && "已有 Goldberg 系 DLL",
+                r.detectedBefore.achConfig && "已有成就清单（本次已刷新）",
+                r.detectedBefore.backup && "已有 .aw2bak 备份（保留首次备份）",
+              ].filter(Boolean).join("；")}</div>`
+            : ""}
           <div>成就清单：${r.settingsDirs.map((s) => `${esc(s.dir)} → ${s.total} 条${s.icons ? `，图标 ${s.icons.ok} 张` : ""}`).join("<br>")}</div>
           <div>Steam 成就数据：${r.schema === "downloaded" ? "已下载到本地" : r.schema === "cached" ? "已有缓存" : `下载失败（${esc(r.schemaError || "网络问题")}）`}</div>
         </div>
@@ -323,6 +362,11 @@ async function openSettings() {
         </div>
 
         <div class="field">
+          <label>面板端口（0 = 默认 5179；改完保存并重启面板生效）</label>
+          <input id="s-uiport" type="number" min="0" max="65535" value="${s.uiPort || 0}" style="max-width:180px">
+        </div>
+
+        <div class="field">
           <label>数据目录</label>
           <div class="dirlist">${esc(s.dataRoot)}</div>
         </div>
@@ -371,6 +415,7 @@ async function openSettings() {
           notify: $("#s-notify").checked,
           iconPrefetch: $("#s-prefetch").checked,
           websocket: { enabled: $("#s-ws").checked, port: +$("#s-wsport").value },
+          ui: { port: +$("#s-uiport").value || 0 },
           steamApiKey: $("#s-key").value,
           steamApiFallbackKey: $("#s-key2").value,
           wall: { dir: $("#s-wall").value },

@@ -325,6 +325,28 @@ async function prefetchAllAchievements(force = false) {
   }
 }
 
+// 检测游戏目录是否已被打过补丁（轻量：只看当前目录的文件，不递归）
+function detectPatchState(dir, entries) {
+  const has = (name) => entries.some((e) => e.isFile() && e.name.toLowerCase() === name);
+  const dllName = ["steam_api64.dll", "steam_api.dll"].find(has) || null;
+
+  let goldbergDll = false;
+  if (dllName) {
+    try {
+      const buf = fs.readFileSync(path.join(dir, dllName));
+      const ascii = buf.toString("latin1");
+      goldbergDll = /goldberg|gbe_fork|steam_settings|steam_settings_path/i.test(ascii);
+    } catch { /* 读不到就当未知 */ }
+  }
+
+  return {
+    dll: dllName,
+    goldbergDll,                                        // DLL 本身像 Goldberg/gbe_fork 系
+    achConfig: has(path.join("steam_settings", "achievements.json")), // 成就清单已生成
+    backup: ["steam_api64.dll.aw2bak", "steam_api.dll.aw2bak"].some(has), // aw2 打过补丁（有备份）
+  };
+}
+
 // ---------- 模拟器补丁（网页端选目录 → 生成成就配置 → 替换 DLL 并备份） ----------
 async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
   if (!dir || typeof dir !== "string") throw new Error("请提供游戏目录");
@@ -338,13 +360,7 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
   }
 
   const cfg = await loadConfig();
-
-  // 打补丁前先确认成就墙目录已设置：补丁完成会顺带归一化导出，没有目标位置等于白做
-  if (!cfg.wall?.dir) {
-    throw new Error(
-      "还没有设置「成就墙目录」（归一化成就的存放位置）。请先到 设置 → 成就墙目录 填一个目录（例如 D:\\AchievementWall）并保存，再来打补丁。"
-    );
-  }
+  const preState = detectPatchState(gameDir, await fsp.readdir(gameDir, { withFileTypes: true }));
 
   const r = await applyEmu({
     appid,
@@ -372,6 +388,7 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
     gameDir,
     exeDir: r.exeDir,
     mode: r.mode,
+    detectedBefore: preState, // 打补丁前的状态（是否已有 goldberg DLL / 成就清单 / aw2 备份）
     replaced: r.applied.filter((x) => x.backup).length,
     written: r.applied.filter((x) => !x.backup).length,
     settingsDirs: r.genResults.map((g) => ({ dir: g.dir, total: g.total, icons: g.icons })),
@@ -400,7 +417,6 @@ async function listFsDir(rawPath) {
     .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 
   // 轻量判断当前目录是不是游戏根（不做递归，避免浏览大目录变慢）
-  const hasDll = entries.some((e) => e.isFile() && /^steam_api(\d{2})?\.dll$/i.test(e.name));
   let appid = null;
   for (const rel of ["steam_appid.txt", path.join("steam_settings", "steam_appid.txt")]) {
     try {
@@ -408,9 +424,19 @@ async function listFsDir(rawPath) {
       if (/^\d+$/.test(txt)) { appid = txt; break; }
     } catch { /* next */ }
   }
+  const patch = detectPatchState(full, entries);
 
   const parent = path.dirname(full);
-  return { path: full, parent: full === parent ? "" : parent, dirs, appid, isGame: hasDll || !!appid };
+  const cfg = await loadConfig();
+  return {
+    path: full,
+    parent: full === parent ? "" : parent,
+    dirs,
+    appid,
+    isGame: !!patch.dll || !!appid,
+    patch,
+    wallSet: !!cfg.wall?.dir,
+  };
 }
 
 // ---------- 设置 ----------
@@ -436,6 +462,7 @@ async function getSettings() {
     fallbackKeyMasked: maskKey(cfg._fallbackKey),
     dataRoot: dataRoot(),
     userDirs,
+    uiPort: cfg.ui?.port || 0,
     wall: cfg.wall || { dir: "" },
     paths: {
       emuRoots: resolvedPaths(cfg).emuRoots,
@@ -470,6 +497,15 @@ async function updateSettings(body) {
   }
   if (typeof body.steamApiFallbackKey === "string" && body.steamApiFallbackKey.trim()) {
     cfg.steamApiFallbackKey = encrypt(body.steamApiFallbackKey.trim());
+  }
+
+  // 面板端口（0 = 恢复内置默认 5179）
+  if (body.ui && typeof body.ui === "object") {
+    const port = Math.floor(Number(body.ui.port) || 0);
+    if (port !== 0 && (port < 1024 || port > 65535)) {
+      throw new Error("面板端口需要在 1024-65535 之间（或填 0 使用默认 5179）");
+    }
+    cfg.ui = { port };
   }
 
   // 可配置路径
@@ -546,6 +582,20 @@ const server = http.createServer(async (req, res) => {
 
     if (p === "/api/schema/prefetch" && req.method === "POST") {
       const body = await readBody(req).catch(() => ({}));
+      // 支持只下指定 appid（详情页单个游戏补齐）
+      const ids = Array.isArray(body.appids) ? body.appids.filter((x) => /^\d+$/.test(String(x))) : null;
+      if (ids?.length) {
+        const cfg = await loadConfig();
+        const r = await prefetchSchemas({
+          appids: ids,
+          lang: cfg.lang,
+          apiKey: cfg._primaryKey,
+          fallbackKey: cfg._fallbackKey,
+          force: body.force !== false,
+        });
+        libCache = { at: 0, data: null };
+        return sendJSON(res, 200, r);
+      }
       return sendJSON(res, 200, await prefetchAllAchievements(!!body.force));
     }
 

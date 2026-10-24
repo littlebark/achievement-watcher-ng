@@ -33,6 +33,7 @@ export const DEFAULTS = {
   action: { target: "", cwd: "", hide: true }, // 解锁时执行的外部命令，注入 AW_* 环境变量
   toast: { appId: null },  // 自定义 AUMID；null=自动选 PowerShell AUMID
   wall: { dir: "" },       // 成就墙导出目录（空=关闭；watchdog 实时同步 + wall 命令全量导出）
+  ui: { port: 0 },         // 面板端口；0 = 内置默认 5179
   paths: {
     // 全部可空 = 使用内置默认（见 PATH_DEFAULTS）；数组按顺序取优先级
     gameSearchDirs: [],    // emu-gen / emu-apply 自动找游戏的搜索根
