@@ -17,7 +17,7 @@ import { log } from "./shared/log.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = path.join(__dirname, "..", "web");
-const START_PORT = Number(process.env.AW2_UI_PORT) || 8090;
+const START_PORT = Number(process.env.AW2_UI_PORT) || 5179;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -338,6 +338,14 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
   }
 
   const cfg = await loadConfig();
+
+  // 打补丁前先确认成就墙目录已设置：补丁完成会顺带归一化导出，没有目标位置等于白做
+  if (!cfg.wall?.dir) {
+    throw new Error(
+      "还没有设置「成就墙目录」（归一化成就的存放位置）。请先到 设置 → 成就墙目录 填一个目录（例如 D:\\AchievementWall）并保存，再来打补丁。"
+    );
+  }
+
   const r = await applyEmu({
     appid,
     gameDir,
@@ -566,10 +574,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-function listen(port, attempt = 0) {
+function listen(port) {
+  // 端口固定不自动跳号：跳号会让用户不知道面板在哪。被占用时明确报错。
   server.once("error", (err) => {
-    if (err.code === "EADDRINUSE" && attempt < 10) return listen(port + 1, attempt + 1);
-    log.error(`[UI] ${err.message}`);
+    if (err.code === "EADDRINUSE") {
+      log.error(`[UI] 端口 ${port} 被占用。请关掉占用它的程序，或用环境变量 AW2_UI_PORT 指定其他端口后重试。`);
+      console.error(`\n端口 ${port} 已被占用，面板无法启动。`);
+      console.error(`  - 关闭占用该端口的程序后重试，或`);
+      console.error(`  - 临时换端口：set AW2_UI_PORT=5180 && node src\\cli.js ui\n`);
+    } else {
+      log.error(`[UI] ${err.message}`);
+    }
     process.exit(1);
   });
   server.listen(port, "127.0.0.1", () => {

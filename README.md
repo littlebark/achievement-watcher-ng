@@ -14,7 +14,7 @@ Toast/WebSocket 通知形态均参考原项目。代码为独立重写（Node ES
 
 | 脚本 | 作用 |
 | --- | --- |
-| `start-ui.bat` | 打开图形面板（游戏库 / 成就详情 / 设置），自动开浏览器 `http://127.0.0.1:8090` |
+| `start-ui.bat` | 打开图形面板（游戏库 / 成就详情 / 设置），自动开浏览器 `http://127.0.0.1:5179` |
 | `start-watchdog.bat` | 启动后台通知（带日志窗口，测试用） |
 | `aw2-hidden.vbs` | 无窗口隐藏启动后台通知（带崩溃自动重启） |
 | `stop-watchdog.bat` | 停止后台通知（只动 aw2 自己的进程） |
@@ -60,13 +60,13 @@ node src\cli.js test-toast
 
 ## 图形面板
 
-- 本地 HTTP + 原生 DOM，零构建、零前端依赖，只监听 `127.0.0.1`（默认 8090，被占用自动 +1）
+- 本地 HTTP + 原生 DOM，零构建、零前端依赖，只监听 `127.0.0.1`，**端口固定 5179**（被占用时报错退出并提示，不自动跳号；可用环境变量 `AW2_UI_PORT` 临时改）
 - 游戏库：封面 / 完成度进度条 / 搜索 / 排序（最近解锁、完成度、名称）；有 schema 缓存但存档已删的游戏也会列出并标记「无存档」
 - 成就详情：已解锁/未解锁、图标、描述、解锁时间、进度型成就（`12 / 20`）
 - 设置：Steam Key（掩码显示，留空不修改）/ 备用 Key / 语言 / 通知开关 / 旧成就阈值 / 冷却 / WebSocket 端口 / 监视目录一览
 - 深链接：`#game/<appid>`、`#settings`
 - **⬇ 下载成就**：把库里所有游戏的成就清单（名称/描述/图标地址）一次性预取到本地，之后离线也能显示并弹通知；watchdog 启动时也会自动在后台预热一遍，避免「首次解锁才联网」导致通知延迟
-- **🔧 打补丁**：网页里浏览并选中游戏目录 → 自动按 `steam_appid.txt` 识别 AppID → 生成 `steam_settings` 成就清单与图标 → 备份（`.aw2bak`）并替换 Goldberg 模拟器 DLL → 顺手预下载该游戏的 Steam 成就数据
+- **🔧 打补丁**：网页里浏览并选中游戏目录 → 自动按 `steam_appid.txt` 识别 AppID → 生成 `steam_settings` 成就清单与图标 → 备份（`.aw2bak`）并替换 Goldberg 模拟器 DLL → 顺手预下载该游戏的 Steam 成就数据。**前置条件：先在设置里配置「成就墙目录」**，没配置会拦截并提示
 - API：`GET /api/library[?refresh=1]`、`GET /api/game/<appid>`、`GET|POST /api/settings`、`POST /api/schema/prefetch`、`POST /api/emu/apply`、`GET /api/fs/list?path=`、`GET /api/health`
 
 ## 成就墙（Achievement Wall）

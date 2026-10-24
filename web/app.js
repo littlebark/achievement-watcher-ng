@@ -193,7 +193,7 @@ async function renderPatchPicker(dir) {
   modalBody.innerHTML = `
     <div class="settings">
       <h2>打 Goldberg 补丁</h2>
-      <p class="hint">选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）。会自动识别 AppID、生成成就清单、备份并替换模拟器 DLL。</p>
+      <p class="hint">选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）。会自动识别 AppID、生成成就清单、备份并替换模拟器 DLL。<b>前提：先在 ⚙ 设置 里配置好「成就墙目录」</b>，否则无法打补丁。</p>
 
       <div class="field">
         <label>当前目录</label>
@@ -257,6 +257,15 @@ async function applyPatch(dir) {
   } catch (e) {
     msg.textContent = `失败：${e.message}`;
     btn.disabled = false;
+    // 没设置成就墙目录时，给一个直达设置的入口
+    if (/成就墙/.test(e.message) && !$("#p-goset")) {
+      const b = document.createElement("button");
+      b.id = "p-goset";
+      b.className = "btn btn-ghost";
+      b.textContent = "去设置成就墙目录 →";
+      b.addEventListener("click", () => { location.hash = "settings"; });
+      msg.after(b);
+    }
   }
 }
 
