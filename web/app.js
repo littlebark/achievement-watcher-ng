@@ -227,7 +227,7 @@ async function renderPatchPicker(dir) {
     <div class="settings">
       <h2>打 Goldberg 补丁</h2>
       <p class="hint">选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）。会自动识别 AppID、生成成就清单、备份并替换模拟器 DLL。打完会顺带把这个游戏的成就数据下载到本地缓存。</p>
-      ${d.path && d.wallSet === false ? `<div class="hint" style="color:#d8b168">提示：成就墙目录还没设置。打补丁和成就下载不受影响，但解锁成就不会同步到成就墙——建议到 ⚙ 设置 里配置一次。</div>` : ""}
+      ${d.path && d.wallSet === false ? `<div class="hint" style="color:#d8b168">提示：成就墙当前已关闭。打补丁和成就下载不受影响，但解锁成就不会同步到成就墙——可在 ⚙ 设置 里重新开启。</div>` : ""}
 
       <div class="field">
         <label>当前目录</label>
@@ -372,9 +372,12 @@ async function openSettings() {
         </div>
 
         <div class="field">
-          <label>成就墙导出目录（留空 = 关闭）</label>
-          <input id="s-wall" type="text" value="${esc(s.wall?.dir || "")}" placeholder="例如 D:\\GameTools\\AchievementWall">
-          <div class="hint">watchdog 每次解锁实时同步该目录；也可用 <code>node src/cli.js path set wall &lt;目录&gt;</code> 设置。</div>
+          <label class="check"><input id="s-wall-on" type="checkbox" ${s.wall?.enabled !== false ? "checked" : ""}> 启用成就墙（解锁实时同步）</label>
+          <div style="margin-top:8px">
+            <label>成就墙导出目录（留空 = 默认 数据目录\AchievementWall，随项目文件夹走）</label>
+            <input id="s-wall" type="text" value="${esc(s.wall?.dir || "")}" placeholder="留空 = 默认 数据目录\AchievementWall">
+            <div class="hint">默认导出到 <code>${esc(s.wall?.effective || "数据目录\\AchievementWall")}</code>；整个项目文件夹删掉即全部清空，不留垃圾。</div>
+          </div>
         </div>
 
         <div class="field">
@@ -418,7 +421,7 @@ async function openSettings() {
           ui: { port: +$("#s-uiport").value || 0 },
           steamApiKey: $("#s-key").value,
           steamApiFallbackKey: $("#s-key2").value,
-          wall: { dir: $("#s-wall").value },
+          wall: { dir: $("#s-wall").value, enabled: $("#s-wall-on").checked },
           paths: {
             emuRoots: $("#s-emuroots").value.split(/\r?\n/),
             emuExtraSources: $("#s-emusrc").value.split(/\r?\n/),

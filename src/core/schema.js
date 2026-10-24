@@ -1,6 +1,5 @@
 // Steam schema 获取 + 本地缓存（兼容原版缓存格式与目录）
 import path from "node:path";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { fsp, exists, readJSON, writeJSON, isYoungerThan } from "../shared/fsx.js";
 import { log } from "../shared/log.js";
@@ -12,16 +11,17 @@ export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.u
 
 // 数据目录优先级：
 //   1) 环境变量 AW2_DATA_ROOT（测试/高级用法）
-//   2) 项目根存在 portable.flag → 数据随项目走（<项目>/data/），整个文件夹拷贝即迁移
-//   3) 默认 %APPDATA%\Achievement Watcher
+//   2) 默认 <项目>/data —— 便携优先：配置、缓存、成就墙全部在项目文件夹内，
+//      不在系统里留任何东西，不想要了直接删项目文件夹即彻底清空。
+//      （旧版本曾默认 %APPDATA%\Achievement Watcher，现仅当用户手动设 AW2_DATA_ROOT 指过去时使用）
 export function dataRoot() {
   if (process.env.AW2_DATA_ROOT) return process.env.AW2_DATA_ROOT;
-  try {
-    if (fs.existsSync(path.join(projectRoot, "portable.flag"))) {
-      return path.join(projectRoot, "data");
-    }
-  } catch { /* fallthrough */ }
-  return path.join(process.env.APPDATA, "Achievement Watcher");
+  return path.join(projectRoot, "data");
+}
+
+// 成就墙默认目录：未在配置中显式设置时，落到数据目录内（同样随项目走）
+export function defaultWallDir() {
+  return path.join(dataRoot(), "AchievementWall");
 }
 
 // languages: 与原版 steam.json 的 api 字段一致（schinese 等），此处校验交给 config

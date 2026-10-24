@@ -179,23 +179,29 @@ async function cmdEmuSource(input) {
 
 async function cmdWall(dir) {
   const { exportWall } = await import("./core/wall.js");
+  const { resolveWallDir } = await import("./core/config.js");
   const cfg = await loadConfig();
 
   if (dir === "off") {
-    await saveConfig({ ...cfg, wall: { ...cfg.wall, dir: "" } });
-    return console.log("成就墙已关闭。");
+    await saveConfig({ ...cfg, wall: { ...cfg.wall, enabled: false } });
+    return console.log("成就墙已关闭（wall off；wall on 重新开启）。");
+  }
+  if (dir === "on") {
+    await saveConfig({ ...cfg, wall: { ...cfg.wall, enabled: true } });
+    dir = "";
   }
   if (dir) {
-    await saveConfig({ ...cfg, wall: { ...cfg.wall, dir: path.resolve(dir) } });
+    await saveConfig({ ...cfg, wall: { ...cfg.wall, dir: path.resolve(dir), enabled: true } });
     cfg.wall.dir = path.resolve(dir);
   }
-  if (!cfg.wall?.dir) {
-    return console.log("用法: node src\\cli.js wall <导出目录>   设置成就墙目录并立即全量导出\n      node src\\cli.js wall           重新全量导出\n      node src\\cli.js wall off       关闭成就墙\n\n设置后 watchdog 会在每次解锁时实时同步该目录。");
+  const effective = resolveWallDir(cfg);
+  if (!effective) {
+    return console.log("成就墙当前已关闭。用法:\n  node src\\cli.js wall <导出目录>   设置目录并开启+全量导出\n  node src\\cli.js wall on           开启（用默认目录）并全量导出");
   }
 
-  console.log(`成就墙目录: ${cfg.wall.dir}`);
+  console.log(`成就墙目录: ${effective}${cfg.wall?.dir ? "" : "（默认）"}`);
   console.log("全量导出中 ...");
-  const r = await exportWall({ cfg, wallDir: cfg.wall.dir });
+  const r = await exportWall({ cfg, wallDir: effective });
   for (const g of r.games) {
     console.log(`  ✓ ${g.appid} ${g.name} — ${g.unlocked}/${g.total}（${g.percent}%）` +
       (g.icons?.fail?.length ? `，图标失败 ${g.icons.fail.length}` : ""));
@@ -237,17 +243,18 @@ async function cmdEmuRestore(appid) {
 
 // ---------- path：查看/设置全部可配置路径 ----------
 const PATH_FIELDS = {
-  wall:              { label: "成就墙导出目录", kind: "single", get: (c) => c.wall?.dir || "", set: (c, v) => { c.wall = { ...c.wall, dir: v }; } },
+  wall:              { label: "成就墙导出目录", kind: "single", get: (c) => c.wall?.dir || "", set: (c, v) => { c.wall = { ...c.wall, dir: v, enabled: true }; } },
   emuRoots:          { label: "Goldberg 模拟器源根目录（emu-source 安装到这里，emu-apply 从这取 DLL）", kind: "list" },
   emuExtraSources:   { label: "额外 emu 源搜索目录（只读借用，如旧工具自带的 goldberg）", kind: "list" },
   gameSearchDirs:    { label: "游戏搜索根目录（emu-gen / emu-apply 自动找游戏）", kind: "list" },
 };
 
-function showPaths(cfg) {
+async function showPaths(cfg) {
   const rp = resolvedPaths(cfg);
-  console.log("当前生效路径（aw2.json paths.* 为空时使用内置默认）：\n");
+  const { resolveWallDir } = await import("./core/config.js");
+  console.log("当前生效路径（aw2.json 为空时使用内置默认）：\n");
   for (const [name, meta] of Object.entries(PATH_FIELDS)) {
-    const eff = name === "wall" ? (cfg.wall?.dir || "（未设置，成就墙关闭）") : rp[name].join("\n  ");
+    const eff = name === "wall" ? (resolveWallDir(cfg) || "（已关闭，wall on 重开）") : rp[name].join("\n  ");
     const userSet = name === "wall" ? !!cfg.wall?.dir
       : Array.isArray(cfg.paths?.[name]) && cfg.paths[name].length;
     console.log(`[${name}]${userSet ? "（自定义）" : "（默认）"} ${meta.label}`);
@@ -256,7 +263,7 @@ function showPaths(cfg) {
   console.log("设置方式:");
   console.log("  node src/cli.js path set wall <目录>                设置成就墙目录（立即导出，watchdog 实时同步）");
   console.log("  node src/cli.js path set <emuRoots|emuExtraSources|gameSearchDirs> <目录1> [目录2 ...]  多个目录按顺序取优先级");
-  console.log("  node src/cli.js path reset <字段名>                  恢复内置默认（wall 即关闭成就墙）");
+  console.log("  node src/cli.js path reset <字段名>                  恢复内置默认（成就墙默认 <数据目录>/AchievementWall）");
 }
 
 async function cmdPath(op, field, ...vals) {
@@ -272,7 +279,7 @@ async function cmdPath(op, field, ...vals) {
     if (field === "wall") cfg.wall = { ...cfg.wall, dir: "" };
     else cfg.paths = { ...cfg.paths, [field]: [] };
     await saveConfig(cfg);
-    return console.log(`已恢复默认: ${field}（成就墙关闭后如需重开用 path set wall <目录>）`);
+    return console.log(`已恢复默认: ${field}（成就墙恢复为 <数据目录>/AchievementWall，用 wall off 可关闭）`);
   }
 
   if (!vals.length) return console.log("用法: node src/cli.js path set <字段名> <目录...>");

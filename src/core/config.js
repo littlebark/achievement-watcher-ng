@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import * as ini from "../shared/ini.js";
 import { fsp, exists, readJSON, writeJSON } from "../shared/fsx.js";
-import { dataRoot } from "./schema.js";
+import { dataRoot, defaultWallDir } from "./schema.js";
 
 const AES_KEY = "xfW!+Bn3E@Luu#^vj3$7wZRqRgACQeCu"; // 与原版一致，便于迁移
 
@@ -32,7 +32,7 @@ export const DEFAULTS = {
   websocket: { enabled: true, port: 8082, auth: null },
   action: { target: "", cwd: "", hide: true }, // 解锁时执行的外部命令，注入 AW_* 环境变量
   toast: { appId: null },  // 自定义 AUMID；null=自动选 PowerShell AUMID
-  wall: { dir: "" },       // 成就墙导出目录（空=关闭；watchdog 实时同步 + wall 命令全量导出）
+  wall: { dir: "", enabled: true }, // 成就墙导出目录（空=默认 <数据目录>/AchievementWall；enabled:false 可整体关闭）
   ui: { port: 0 },         // 面板端口；0 = 内置默认 5179
   paths: {
     // 全部可空 = 使用内置默认（见 PATH_DEFAULTS）；数组按顺序取优先级
@@ -62,6 +62,12 @@ export function resolvedPaths(cfg) {
     emuRoots: [...list(p.emuRoots, PATH_DEFAULTS.emuRoots), path.join(dataRoot(), "tools", "steam-emu")],
     emuExtraSources: list(p.emuExtraSources, PATH_DEFAULTS.emuExtraSources),
   };
+}
+
+// 成就墙生效目录：显式关闭（wall.enabled=false）→ null；未配置 dir → 默认 <数据目录>/AchievementWall（随项目走）
+export function resolveWallDir(cfg) {
+  if (cfg?.wall?.enabled === false) return null;
+  return cfg?.wall?.dir || defaultWallDir();
 }
 
 export async function loadConfig() {

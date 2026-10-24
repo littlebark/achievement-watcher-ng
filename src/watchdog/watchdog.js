@@ -147,10 +147,13 @@ async function handleFileChange(folder, filePath, cfg) {
 
   await track.save(appID, merged);
 
-  // 成就墙实时同步（cfg.wall.dir 为空时关闭）
-  if (cfg.wall?.dir) {
-    const { syncGameWall } = await import("../core/wall.js");
-    await syncGameWall({ appid: appID, game, pairs, previous, cfg });
+  // 成就墙实时同步（默认开启，导出到 <数据目录>/AchievementWall；wall.enabled=false 关闭）
+  {
+    const { resolveWallDir } = await import("../core/config.js");
+    if (resolveWallDir(cfg)) {
+      const { syncGameWall } = await import("../core/wall.js");
+      await syncGameWall({ appid: appID, game, pairs, previous, cfg });
+    }
   }
 }
 

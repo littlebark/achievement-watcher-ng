@@ -1,5 +1,5 @@
 {
-  "_说明": "复制本文件内容到数据目录的 aw2.json 修改（默认 %APPDATA%\\Achievement Watcher\\aw2.json；项目根创建 portable.flag 空文件后为 <项目>\\data\\aw2.json）。所有字段均可省略，省略即用默认值。steamApiKey 用 node src\\cli.js setkey 设置（加密存储），不要手填明文。",
+  "_说明": "复制本文件内容到 <项目>\\data\\aw2.json 修改（默认数据目录就是项目内的 data\\，便携式：所有数据都在项目文件夹里，删除项目文件夹即彻底清空；也可用环境变量 AW2_DATA_ROOT 指到别处）。所有字段均可省略，省略即用默认值。steamApiKey 用 node src\\cli.js setkey 设置（加密存储），不要手填明文。",
 
   "lang": "schinese",
   "steamApiKey": "",
@@ -15,8 +15,9 @@
   "toast": { "appId": null },
 
   "wall": {
-    "_说明": "成就墙导出目录；空字符串 = 关闭（不导出、watchdog 不实时同步）",
-    "dir": ""
+    "_说明": "成就墙导出目录；dir 留空 = 默认 <数据目录>\\AchievementWall（随项目走）；enabled:false 整体关闭",
+    "dir": "",
+    "enabled": true
   },
 
   "paths": {

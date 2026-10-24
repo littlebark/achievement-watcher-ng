@@ -11,6 +11,7 @@ import path from "node:path";
 import fsp from "node:fs/promises";
 import { exists, writeJSON } from "../shared/fsx.js";
 import { getGameData } from "./schema.js";
+import { resolveWallDir } from "./config.js";
 import { getWatchFolders, loadUserDirs } from "./discover.js";
 import { parseAchievementFile } from "./normalize/file-parsers.js";
 import { matchAchievements } from "./match.js";
@@ -107,8 +108,10 @@ async function writeGame({ appid, game, progress, wallDir, withIcons = true }) {
 }
 
 // 全量导出：扫描所有监视目录 → 归一化 → 落盘
+// wallDir 未传时用 resolveWallDir（配置值或默认 <数据目录>/AchievementWall）
 export async function exportWall({ cfg, wallDir, withIcons = true, appids = null }) {
-  wallDir = path.resolve(wallDir);
+  wallDir = path.resolve(wallDir || resolveWallDir(cfg));
+  if (!wallDir || wallDir === "null") throw new Error("成就墙已被关闭（wall.enabled=false），如需导出请设置目录或重新启用");
   await fsp.mkdir(wallDir, { recursive: true });
 
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
@@ -158,7 +161,7 @@ export async function exportWall({ cfg, wallDir, withIcons = true, appids = null
 
 // watchdog 实时同步：解锁后调用（轻量，只写受影响的游戏）
 export async function syncGameWall({ appid, game, pairs, previous, cfg }) {
-  const wallDir = cfg.wall?.dir;
+  const wallDir = resolveWallDir(cfg);
   if (!wallDir) return null;
   try {
     const progress = normalizeProgress(game.achievement.list, pairs, previous);

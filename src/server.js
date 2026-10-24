@@ -6,7 +6,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { loadConfig, saveConfig, encrypt, resolvedPaths } from "./core/config.js";
+import { loadConfig, saveConfig, encrypt, resolvedPaths, resolveWallDir } from "./core/config.js";
 import { getWatchFolders, loadUserDirs } from "./core/discover.js";
 import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
@@ -435,7 +435,7 @@ async function listFsDir(rawPath) {
     appid,
     isGame: !!patch.dll || !!appid,
     patch,
-    wallSet: !!cfg.wall?.dir,
+    wallSet: resolveWallDir(cfg) !== null,
   };
 }
 
@@ -463,7 +463,7 @@ async function getSettings() {
     dataRoot: dataRoot(),
     userDirs,
     uiPort: cfg.ui?.port || 0,
-    wall: cfg.wall || { dir: "" },
+    wall: { dir: cfg.wall?.dir || "", enabled: cfg.wall?.enabled !== false, effective: resolveWallDir(cfg) },
     paths: {
       emuRoots: resolvedPaths(cfg).emuRoots,
       emuExtraSources: resolvedPaths(cfg).emuExtraSources,
@@ -511,6 +511,7 @@ async function updateSettings(body) {
   // 可配置路径
   if (body.wall && typeof body.wall === "object") {
     if (typeof body.wall.dir === "string") cfg.wall = { ...cfg.wall, dir: body.wall.dir.trim() };
+    if (typeof body.wall.enabled === "boolean") cfg.wall = { ...cfg.wall, enabled: body.wall.enabled };
   }
   if (body.paths && typeof body.paths === "object") {
     const clean = (v) => Array.isArray(v)

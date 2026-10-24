@@ -71,15 +71,16 @@ node src\cli.js test-toast
 
 ## 成就墙（Achievement Wall）
 
-把所有模拟器/破解组的成就**归一化为 Steam 成就字段标准**，导出到你指定的目录，作为自建成就墙的数据源：
+把所有模拟器/破解组的成就**归一化为 Steam 成就字段标准**，导出为自建成就墙的数据源。**默认导出到 `<项目>\data\AchievementWall`**（随项目文件夹走），也可以指定自己的目录：
 
 ```cmd
-:: 设置目录并立即全量导出（之后 watchdog 每次解锁会实时同步）
+:: 指定目录并立即全量导出（之后 watchdog 每次解锁会实时同步）
 node src\cli.js wall "D:\GameTools\AchievementWall"
 
-:: 重新全量导出（图标断点续传） / 关闭
+:: 重新全量导出（图标断点续传） / 关闭 / 用默认目录重新开启
 node src\cli.js wall
 node src\cli.js wall off
+node src\cli.js wall on
 ```
 
 目录结构（每个游戏一个以 Steam appid 命名的文件夹）：
@@ -97,7 +98,7 @@ node src\cli.js wall off
 
 ## 兼容性设计
 
-- 复用原版数据：`%APPDATA%\Achievement Watcher\` 下的 schema 缓存（6 个月）、track 状态缓存、`cfg/userdir.db`、`cfg/options.ini`（语言/key 自动迁移，key 沿用原 AES 混淆格式）。
+- 兼容原版数据：如设置了 `AW2_DATA_ROOT` 指向旧版 `%APPDATA%\Achievement Watcher\`，可复用其 schema 缓存（6 个月）、track 状态缓存、`cfg/userdir.db`、`cfg/options.ini`（语言/key 自动迁移，key 沿用原 AES 混淆格式）。
 - 无 Key 也能看缓存过的游戏；联网失败自动回退过期缓存。
 - 去服务器化：不再依赖已关停的 `api.xan105.com`，schema 直接走 Steam Web API。
 - WebSocket 通知格式与原版一致（`{appID, game, achievement, displayName, description, icon, time, progress?}`），默认端口 8082，支持 `{"cmd":"test"}`。
@@ -142,7 +143,7 @@ npm test    # 8 个格式解析/匹配单测
 
 ```cmd
 node src\cli.js path                                :: 查看全部生效路径（标注 默认/自定义）
-node src\cli.js path set wall <目录>                 :: 成就墙导出目录
+node src\cli.js path set wall <目录>                 :: 成就墙导出目录（留空用默认 <数据目录>\AchievementWall）
 node src\cli.js path set emuRoots <目录...>          :: 模拟器源安装根（emu-apply 取 DLL 处）
 node src\cli.js path set emuExtraSources <目录...>   :: 额外只读模拟器源
 node src\cli.js path set gameSearchDirs <目录...>    :: emu-gen/emu-apply 自动找游戏的搜索根
@@ -153,14 +154,13 @@ node src\cli.js path reset <字段>                    :: 恢复内置默认
 
 ### 数据目录在哪
 
-优先级：环境变量 `AW2_DATA_ROOT` → 项目根有 `portable.flag` 时用 `<项目>\data\` → 默认 `%APPDATA%\Achievement Watcher`。
-里面存放：`aw2.json`（配置，含加密的 Steam Key）、`cfg/userdir.db`（自定义监视目录）、`steam_cache/`（成就 schema 与图标缓存，6 个月有效）、`track/`（解锁状态）、`tools/emu-install/`（模拟器安装清单，回滚用）。
+**默认就是项目文件夹里的 `data\`（便携式设计）**——配置、缓存、成就墙全在项目内，不在系统任何地方留东西；不想要了直接删除项目文件夹即彻底清空。也可用环境变量 `AW2_DATA_ROOT` 指到别处（如 `%APPDATA%`）。
+`data\` 里存放：`aw2.json`（配置，含加密的 Steam Key）、`cfg/userdir.db`（自定义监视目录）、`steam_cache/`（成就 schema 与图标缓存，6 个月有效）、`track/`（解锁状态）、`tools/emu-install/`（模拟器安装清单，回滚用）、`AchievementWall/`（成就墙默认导出目录）。
 
 ### 拷贝到其他电脑
 
 1. 目标机装 Node.js 18+（启动脚本会自动找）
-2. 拷贝整个项目文件夹（或整个盘）
-3. 配置跟着走：要么把 `%APPDATA%\Achievement Watcher` 也拷过去放同位置；要么（推荐）在项目根建一个空的 `portable.flag` 文件再拷，配置和数据全在项目里的 `data\` 目录
-4. 游戏安装路径不同的话，改 `path set gameSearchDirs` / 重新 `scan`
+2. 拷贝整个项目文件夹（或整个盘）——配置、缓存、成就墙全在里面，无需额外步骤
+3. 游戏安装路径不同的话，改 `path set gameSearchDirs` / 重新 `scan`
 
 仅支持 Windows（Toast 通知依赖系统 WinRT）。
