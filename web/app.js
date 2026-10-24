@@ -95,7 +95,7 @@ function renderGrid() {
         <div class="card-title" title="${esc(g.name)}">${esc(g.name)}</div>
         <div class="bar ${done ? "done" : ""}"><i style="width:${g.percent}%"></i></div>
         <div class="card-meta">
-          <span>${g.error ? `<span class="tag err" title="${esc(g.error)}">数据异常</span>` : `<b>${g.unlocked}</b> / ${g.total}`}</span>
+          <span>${g.error ? `<span class="tag err" title="${esc(g.error)}">数据异常</span>` : `<b>${g.unlocked}</b> / ${g.total}${g.offline ? ` <span class="tag warn" title="${esc(g.offlineReason || "未取到 Steam 成就数据，仅显示本地存档")}">离线</span>` : ""}`}</span>
           <span>${g.noSave ? `<span class="tag">无存档</span> ` : ""}<b>${g.percent}%</b></span>
         </div>
       </div>`;

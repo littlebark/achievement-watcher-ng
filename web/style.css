@@ -214,6 +214,7 @@ main {
   color: var(--text-dim);
 }
 .tag.err { color: #e08a8a; border-color: #5a3232; }
+.tag.warn { color: #d8b168; border-color: #5a4a2a; }
 
 .empty { text-align: center; color: var(--text-dim); padding: 50px 0; }
 

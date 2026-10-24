@@ -53,8 +53,28 @@ export async function getGameData({ appID, lang, apiKey, fallbackKey }) {
   }
 }
 
+const RETRY_DELAYS = [400, 1200, 2500]; // 网络抖动重试（Steam API 偶发 TLS/连接重置）
+
 async function fetchSchema(appID, lang, key) {
   const url = `https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v0002/?key=${key}&appid=${appID}&l=${lang}&format=json`;
+
+  let lastError;
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+    try {
+      return await fetchSchemaOnce(appID, url);
+    } catch (e) {
+      lastError = e;
+      // 只有网络类/服务端错误才重试；key 无效、无成就等确定性错误直接抛
+      const retriable = /fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|UND_ERR|socket|network|STEAM_API_5\d\d|STEAM_API_429/i.test(e.message);
+      if (!retriable || attempt === RETRY_DELAYS.length) break;
+      log.warn(`schema 请求失败（${e.message}），${RETRY_DELAYS[attempt]}ms 后重试 ${attempt + 1}/${RETRY_DELAYS.length}`);
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+    }
+  }
+  throw lastError;
+}
+
+async function fetchSchemaOnce(appID, url) {
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text();

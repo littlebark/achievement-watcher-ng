@@ -43,11 +43,19 @@ async function loadOneGame(appid, folder, cfg) {
     source: folder.source,
     dir: folder.dir,
     error: null,
+    offline: false,
   };
+
+  let entries;
 
   try {
     const file = path.join(folder.dir, folder.files[0]);
-    const entries = await parseAchievementFile(file);
+    entries = await parseAchievementFile(file);
+  } catch (e) {
+    return { ...base, name: `App ${appid}`, error: `存档解析失败：${e.message}` };
+  }
+
+  try {
     const game = await getGameData({
       appID: appid,
       lang: cfg.lang,
@@ -70,6 +78,21 @@ async function loadOneGame(appid, folder, cfg) {
       lastUnlock: unlockedPairs.reduce((m, p) => Math.max(m, +p.local.UnlockTime || 0), 0),
     };
   } catch (e) {
+    // schema 拿不到（断网/接口异常）：用本地存档降级展示，名称回退为存档里的条目名
+    if (entries.length) {
+      const done = entries.filter((x) => x.Achieved);
+      return {
+        ...base,
+        name: `App ${appid}`,
+        header: `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`,
+        total: entries.length,
+        unlocked: done.length,
+        percent: Math.round((done.length / entries.length) * 100),
+        lastUnlock: done.reduce((m, x) => Math.max(m, +x.UnlockTime || 0), 0),
+        offline: true,
+        offlineReason: e.message,
+      };
+    }
     return { ...base, name: `App ${appid}`, error: e.message };
   }
 }
@@ -191,12 +214,45 @@ async function getGameDetail(appid) {
   }
 
   const entries = await parseAchievementFile(path.join(folder.dir, folder.files[0]));
-  const game = await getGameData({
-    appID: appid,
-    lang: cfg.lang,
-    apiKey: cfg._primaryKey,
-    fallbackKey: cfg._fallbackKey,
-  });
+
+  let game;
+  try {
+    game = await getGameData({
+      appID: appid,
+      lang: cfg.lang,
+      apiKey: cfg._primaryKey,
+      fallbackKey: cfg._fallbackKey,
+    });
+  } catch (e) {
+    // schema 不可用：用本地存档键名降级展示，至少能看到解锁了什么
+    if (!entries.length) throw e;
+    const done = entries.filter((x) => x.Achieved);
+    return {
+      appid,
+      name: `App ${appid}`,
+      header: `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`,
+      source: folder.source,
+      dir: folder.dir,
+      total: entries.length,
+      unlocked: done.length,
+      offline: true,
+      offlineReason: e.message,
+      achievements: done
+        .sort((a, b) => (+b.UnlockTime || 0) - (+a.UnlockTime || 0))
+        .map((x) => ({
+          name: x.Name,
+          displayName: x.Name,
+          description: "",
+          hidden: false,
+          icon: null,
+          icongray: null,
+          achieved: true,
+          unlockTime: +x.UnlockTime || 0,
+          cur: +x.CurProgress || 0,
+          max: +x.MaxProgress || 0,
+        })),
+    };
+  }
   const pairs = matchAchievements(game.achievement.list, entries);
 
   const achievements = pairs.map((p) => ({
