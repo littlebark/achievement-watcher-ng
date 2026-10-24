@@ -97,6 +97,8 @@ export async function getWatchFolders({ userDirs = [], includeBuiltin = true } =
     dirs.push(userDir.path);
 
     for (const dir of dirs) {
+      // steam_settings 是模拟器配置目录（成就定义），不是玩家存档，跳过避免同 appid 重复
+      if (path.basename(dir).toLowerCase() === "steam_settings") continue;
       const names = await walkFiles(dir);
       const files = names.filter((f) => fileSet.has(f.toLowerCase()));
       if (files.length === 0) continue;

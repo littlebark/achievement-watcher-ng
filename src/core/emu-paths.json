@@ -12,6 +12,11 @@
       "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["achievements.json", "achievements.ini"] }
     },
     {
+      "source": "gbe_fork (GSE Saves)",
+      "dir": ["%APPDATA%/GSE Saves"],
+      "watch": { "recursive": true, "pathFilter": "[0-9]+", "files": ["achievements.json", "achievements.ini"] }
+    },
+    {
       "source": "Goldberg (EMPRESS)",
       "dir": ["%APPDATA%/EMPRESS", "%Public%/Documents/EMPRESS"],
       "watch": { "recursive": true, "pathFilter": "[0-9]+\\\\remote\\\\[0-9]+", "files": ["achievements.json"] },
