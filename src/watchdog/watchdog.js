@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { exists, mtimeMs, sanitizeFileName } from "../shared/fsx.js";
 import { log, setLogFile } from "../shared/log.js";
 import { acquireSingleInstance } from "../shared/lock.js";
-import { loadConfig } from "../core/config.js";
+import { loadConfig, resolveSound } from "../core/config.js";
 import { getWatchFolders, loadUserDirs } from "../core/discover.js";
 import { parseAchievementFile } from "../core/normalize/file-parsers.js";
 import { matchAchievements } from "../core/match.js";
@@ -41,8 +41,8 @@ async function notify(achievement, game, options, delay = 0) {
     time: achievement.local.UnlockTime || Math.floor(Date.now() / 1000),
   };
 
-  // WebSocket 广播（不依赖图标本地化）
-  if (options.cfg.websocket?.enabled) broadcast(payload);
+  // 通知模式：toast=系统通知（默认）；overlay=自绘弹窗（桌面版）；both=两者都发
+  const mode = options.cfg.notify?.mode || process.env.AW2_NOTIFY_MODE || "toast";
 
   // 稀有度判定（Xbox 钻石成就式）：全球解锁率 ≤ 阈值视为稀有。
   // 数据来自 Steam 全球统计接口（缓存 30 天，启动时已预取），取不到就按普通处理，绝不阻塞通知。
@@ -59,11 +59,33 @@ async function notify(achievement, game, options, delay = 0) {
       }
     } catch { /* 不阻塞 */ }
   }
-  payload.rare = rare || isLast;
+  const isRare = rare || isLast;
+  const attribution = isLast
+    ? `全成就达成！${rare && rarePercent != null ? ` · 稀有成就 · 全球仅 ${rarePercent.toFixed(1)}%` : ""}`
+    : rare && rarePercent != null
+      ? `稀有成就 · 全球仅 ${rarePercent.toFixed(1)}% 玩家解锁`
+      : null;
+
+  // 音效解析（toast 模式由 sendToast 播；overlay 模式经广播交给渲染进程播）
+  const sndSpec = isRare ? options.cfg.sound?.rare : options.cfg.sound?.normal;
+  const snd = resolveSound(sndSpec);
+
+  // WebSocket 广播（不依赖图标本地化；含稀有度/归属/音效路径，供 overlay 与 OBS 客户端）
+  if (options.cfg.websocket?.enabled) {
+    broadcast({
+      ...payload,
+      rare: isRare,
+      rarePercent: rare && rarePercent != null ? rarePercent : undefined,
+      attribution,
+      soundPath: snd.kind === "wav" ? snd.path : undefined,
+    });
+  }
+
+  payload.rare = isRare;
   if (rare) payload.rarePercent = rarePercent;
 
-  // Toast
-  if (options.cfg.notify) {
+  // 系统通知（toast / both 模式）
+  if (options.cfg.notify && (mode === "toast" || mode === "both")) {
     try {
       let icon = payload.icon;
       if (options.cfg.iconPrefetch) icon = await fetchIcon(payload.icon, game.appid);
@@ -72,12 +94,8 @@ async function notify(achievement, game, options, delay = 0) {
         message: `${payload.game} — ${payload.description || "Achievement unlocked!"}`,
         icon,
         appId: options.cfg.toast?.appId,
-        sound: rare || isLast ? options.cfg.sound?.rare : options.cfg.sound?.normal,
-        attribution: isLast
-          ? `全成就达成！${rare && rarePercent != null ? ` · 稀有成就 · 全球仅 ${rarePercent.toFixed(1)}%` : ""}`
-          : rare && rarePercent != null
-            ? `稀有成就 · 全球仅 ${rarePercent.toFixed(1)}% 玩家解锁`
-            : null,
+        sound: isRare ? options.cfg.sound?.rare : options.cfg.sound?.normal,
+        attribution,
       });
       log.info(`[NOTIFY] ${payload.game} :: ${payload.displayName}${rare ? ` [稀有 ${rarePercent?.toFixed(1)}%]` : ""}`);
     } catch (e) {

@@ -17,3 +17,6 @@ Desktop.ini
 test/*.png
 
 .tmp-*
+
+# 桌面版（Electron 子项目）
+electron/node_modules/

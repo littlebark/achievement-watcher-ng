@@ -1,0 +1,14 @@
+{
+  "name": "aw2-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "aw2 桌面版：自绘成就弹窗（Xbox 风格）+ 内置 watchdog",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}

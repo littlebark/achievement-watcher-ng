@@ -518,7 +518,7 @@ async function updateSettings(body) {
   if (body.websocket && typeof body.websocket === "object") {
     cfg.websocket = {
       enabled: !!body.websocket.enabled,
-      port: Number(body.websocket.port) || 8082,
+      port: Number(body.websocket.port) || 8083,
       auth: cfg.websocket?.auth ?? null,
     };
   }
@@ -659,7 +659,7 @@ function listen(port) {
   // 端口固定不自动跳号：跳号会让用户不知道面板在哪。被占用时明确报错。
   server.once("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      log.error(`[UI] 端口 ${port} 被占用。请关掉占用它的程序，或用环境变量 AW2_UI_PORT 指定其他端口后重试。`);
+      log.error(`[UI] 端口 ${port} 被占用（注意 QQ 等应用常驻 8082）。请关掉占用它的程序，或用环境变量 AW2_UI_PORT 指定其他端口后重试。`);
       console.error(`\n端口 ${port} 已被占用，面板无法启动。`);
       console.error(`  - 关闭占用该端口的程序后重试，或`);
       console.error(`  - 临时换端口：set AW2_UI_PORT=5180 && node src\\cli.js ui\n`);

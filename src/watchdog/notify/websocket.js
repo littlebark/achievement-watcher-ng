@@ -5,7 +5,7 @@ import { log } from "../../shared/log.js";
 
 let wss = null;
 
-export function startWebSocket({ port = 8082, auth = null } = {}) {
+export function startWebSocket({ port = 8083, auth = null } = {}) {
   const server = createServer();
   wss = new WebSocketServer({ noServer: true });
 
@@ -25,7 +25,7 @@ export function startWebSocket({ port = 8082, auth = null } = {}) {
 
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      log.error(`[WS] 端口 ${port} 被占用，WebSocket 广播不可用。可在 %APPDATA%\\Achievement Watcher\\aw2.json 中修改 websocket.port`);
+      log.error(`[WS] 端口 ${port} 被占用（注意 QQ 等应用常驻 8082），WebSocket 广播不可用。可在 %APPDATA%\\Achievement Watcher\\aw2.json 中修改 websocket.port`);
     } else {
       log.error(`[WS] ${err.message}`);
     }

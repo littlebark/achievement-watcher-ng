@@ -29,7 +29,7 @@ export const DEFAULTS = {
   checkProcessRunning: false, // 依赖 gameIndex（原服务器已死），默认关闭
   iconPrefetch: true,
   notify: true,
-  websocket: { enabled: true, port: 8082, auth: null },
+  websocket: { enabled: true, port: 8083, auth: null },
   action: { target: "", cwd: "", hide: true }, // 解锁时执行的外部命令，注入 AW_* 环境变量
   toast: { appId: null },  // 自定义 AUMID；null=自动选 PowerShell AUMID
   sound: {

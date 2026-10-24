@@ -381,7 +381,7 @@ async function openSettings() {
           </div>
           <div class="field">
             <label>WebSocket 端口</label>
-            <input id="s-wsport" type="number" min="1" max="65535" value="${s.websocket?.port || 8082}">
+            <input id="s-wsport" type="number" min="1" max="65535" value="${s.websocket?.port || 8083}">
           </div>
         </div>
 
