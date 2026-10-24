@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fsp, exists, readJSON, writeJSON, isYoungerThan } from "../shared/fsx.js";
 import { log } from "../shared/log.js";
+import { httpFetch as fetch } from "../shared/http.js";
 
 const SCHEMA_TTL = 6 * 30 * 24 * 3600 * 1000; // 6 个月，与原版一致
 
@@ -48,7 +49,7 @@ export async function getGameData({ appID, lang, apiKey, fallbackKey, force = fa
       return JSON.parse(await fsp.readFile(filePath, "utf8"));
     }
     if (/fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|UND_ERR/i.test(e.message))
-      throw new Error(`网络请求失败（${e.message}）：无法拉取 app ${appID} 的成就 schema，且本地没有缓存。请联网后重试`);
+      throw new Error(`网络请求失败（${e.message}）：无法拉取 app ${appID} 的成就 schema，且本地没有缓存。请检查网络；如开了代理软件，请确认系统代理已开启（桌面版自动跟随系统代理）`);
     throw e;
   }
 }

@@ -1,6 +1,6 @@
 // aw2 桌面版主进程：内置 watchdog + 自绘成就弹窗（overlay）
 // 架构：主进程跑原有 watchdog（纯 Node 代码原样复用）→ WS 广播 → 本窗口渲染 Xbox 风格卡片
-import { app, BrowserWindow, ipcMain, shell, screen, Tray, Menu, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, shell, screen, Tray, Menu, dialog, net } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -179,6 +179,9 @@ function createTray() {
 app.whenReady().then(async () => {
   setLogFile(path.join(dataRoot(), "logs", "aw2-desktop.log"));
   log.info("[OVERLAY] 桌面版启动");
+
+  // HTTP 出口注入：net.fetch 走 Chromium 网络栈，自动遵循系统代理设置（Clash 等无需额外配置）
+  globalThis.__aw2fetch = net.fetch.bind(net);
 
   globalThis.__aw2cfg = await loadConfig();
   uiPort = globalThis.__aw2cfg?.ui?.port || 5179; // 0 = 默认 5179

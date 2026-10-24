@@ -4,6 +4,7 @@
 import path from "node:path";
 import fsp from "node:fs/promises";
 import { exists, writeJSON } from "../shared/fsx.js";
+import { httpFetch as fetch } from "../shared/http.js";
 import { getGameData } from "./schema.js";
 import { loadConfig, resolvedPaths } from "./config.js";
 
