@@ -116,6 +116,81 @@ node src\cli.js wall on
 
 > **版权提示：** Xbox / PlayStation 等平台的官方成就音效版权归各自权利人所有，本项目不附带、也不建议随项目再分发。自用请自行从合法渠道获取；若要公开发布带音效的整包，请换成 CC0 / 自有版权音频。
 
+## 程序流程
+
+### 启动流程
+
+```mermaid
+flowchart TD
+    A["start-watchdog.bat / aw2-hidden.vbs"] --> B{"单实例锁 data/aw2.lock"}
+    B -- 已有实例 --> Z["退出（防重复启动）"]
+    B -- 拿到锁 --> C["加载配置 data/aw2.json<br/>（兼容迁移原版 options.ini / AES Key）"]
+    C --> D{"已配置<br/>Steam Web API Key?"}
+    D -- 否 --> Z2["报错退出并提示申请 Key"]
+    D -- 是 --> E["发现监视目录<br/>emu-paths.json 内置路径表 + userdir.db 自定义目录"]
+    E --> F["fs.watch 监视全部成就文件"]
+    F --> G["1.5 秒后后台预热<br/>schema（6 个月缓存）+ 全球解锁率（30 天缓存）"]
+    G --> H["进入监视循环，通知就绪"]
+```
+
+### 成就解锁通知流程
+
+```mermaid
+flowchart TD
+    A["游戏写入成就存档"] --> B{"文件 mtime 在 1 秒内?<br/>（过滤历史存档扫描）"}
+    B -- 否 --> Z["忽略"]
+    B -- 是 --> C["解析存档<br/>Goldberg / GSE / SSE / RUNE / OnlineFix 等"]
+    C --> D["与 Steam schema 比对（本地缓存优先）"]
+    D --> E{"有新解锁?"}
+    E -- 否 --> F["进度型成就 → WS 广播进度<br/>并更新 track 缓存"]
+    E -- 是 --> G{"解锁时间在阈值内?<br/>（防打开旧存档刷屏）"}
+    G -- 否 --> Z2["跳过（旧成就）"]
+    G -- 是 --> H{"全成就达成?<br/>（最后一个成就）"}
+    H -- 是 --> R["按稀有处理"]
+    H -- 否 --> I{"查全球解锁率<br/>（本地缓存 30 天，仅偶发联网）"}
+    I -- "≤ 阈值（默认 10%）" --> R
+    I -- 普通 --> N["普通分支"]
+    R --> O["Toast 通知<br/>稀有音效 + 归属行「全球仅 x% 玩家解锁」"]
+    N --> P["Toast 通知<br/>普通音效"]
+    O --> Q["WebSocket 广播（含 rare 标记）<br/>+ 外部命令钩子（注入 AW_* 环境变量）"]
+    P --> Q
+    Q --> S["track 状态保存"]
+    S --> T["成就墙实时同步<br/>（归一化导出 Steam 字段标准）"]
+    F --> S
+```
+
+### 模块结构
+
+```mermaid
+flowchart LR
+    subgraph core["core（核心层）"]
+        config["config<br/>配置/路径/音效解析"]
+        schema["schema<br/>Steam API + 多级缓存"]
+        discover["discover<br/>监视目录发现"]
+        parsers["file-parsers<br/>各破解组存档解析"]
+        match["match<br/>成就比对"]
+        track["track<br/>解锁状态"]
+        wall["wall<br/>成就墙导出"]
+        emu["emuinstall / emugen<br/>打补丁 / 生成成就清单"]
+    end
+    subgraph watchdog["watchdog（通知层）"]
+        w["watchdog 主循环<br/>fs.watch + 防抖"]
+        toast["toast<br/>WinRT 通知 + 音效"]
+        ws["websocket<br/>实时广播"]
+    end
+    subgraph ui["server + web（面板层）"]
+        srv["server<br/>本地 HTTP API"]
+        web["web<br/>游戏库/详情/设置"]
+    end
+    w --> parsers & match & track
+    parsers --> discover
+    match --> schema
+    w --> toast & ws
+    w --> wall
+    srv --> config & schema & emu
+    web --> srv
+```
+
 ## 兼容性设计
 
 - 兼容原版数据：如设置了 `AW2_DATA_ROOT` 指向旧版 `%APPDATA%\Achievement Watcher\`，可复用其 schema 缓存（6 个月）、track 状态缓存、`cfg/userdir.db`、`cfg/options.ini`（语言/key 自动迁移，key 沿用原 AES 混淆格式）。
