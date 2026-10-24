@@ -16,7 +16,10 @@ if (-not (Test-Path "dist\win-unpacked\Achievement Watcher NG.exe")) {
 $stage = "dist\_fastpack-stage"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory $stage | Out-Null
-Copy-Item package.json,electron\main.js,electron\preload.js,electron\panel-preload.js,electron\overlay.html,electron\overlay.js,electron\tray.png $stage
+New-Item -ItemType Directory "$stage\electron" | Out-Null
+Copy-Item package.json $stage
+# NOTE: must keep the electron\ subdirectory - package.json main points to "electron/main.js"
+Copy-Item electron\main.js,electron\preload.js,electron\panel-preload.js,electron\overlay.html,electron\overlay.js,electron\tray.png "$stage\electron"
 foreach ($d in "src", "web", "vendor") {
     robocopy $d "$stage\$d" /E /NFL /NDL /NJH /NJS | Out-Null
     if ($LASTEXITCODE -ge 8) { Write-Error "robocopy $d failed"; exit 1 }
