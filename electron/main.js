@@ -193,7 +193,9 @@ function createTray() {
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked, path: exePathForAutostart() }),
     },
     { type: "separator" },
-    { label: "退出", click: () => { tray?.destroy(); app.quit(); } },
+    // 先 quit 再销毁托盘：Windows 上在菜单回调里先 destroy 可能抛异常，
+    // 短路掉后面的 app.quit()，导致"图标消失但进程残留"的假退出
+    { label: "退出", click: () => { try { app.quit(); } finally { try { tray?.destroy(); } catch {} } } },
   ]));
 }
 
@@ -238,3 +240,11 @@ app.whenReady().then(async () => {
 
 // 所有窗口关闭也不退出（overlay 窗口只是隐藏/常驻）
 app.on("window-all-closed", (e) => { /* keep running */ });
+
+// 退出链路日志：排查"点退出后进程是否真正归零"
+app.on("before-quit", () => log.info("[QUIT] before-quit：开始退出流程"));
+app.on("will-quit", () => {
+  log.info("[QUIT] will-quit：窗口已全部关闭，即将结束主进程");
+  try { tray?.destroy(); } catch {}
+});
+app.on("quit", (_e, code) => log.info(`[QUIT] quit：主进程退出，exitCode=${code}`));
