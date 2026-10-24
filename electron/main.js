@@ -68,7 +68,7 @@ function createOverlayWindow() {
   });
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.loadFile("overlay.html");
+  win.loadFile(path.join(__dirname, "overlay.html"));
   win.showInactive(); // 不抢焦点：游戏全屏时弹卡片不切屏
 
   // 渲染层诊断：preload/页面出错时落到日志，避免"静默黑窗"无从排查
@@ -120,6 +120,7 @@ function connectBroadcast() {
 
 // 样式预览：连发 5 张不同样式的测试卡片，按顺序队列自动逐个播放（每张 5 秒）
 function previewStyles() {
+  log.info(`[OVERLAY] 样式预览点击：win存在=${!!win}, 已销毁=${win?.isDestroyed?.()}, 加载完成=${win?.webContents?.isLoading?.() === false}`);
   if (!win || win.isDestroyed()) return;
   const base = {
     appID: 480,
