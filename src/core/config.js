@@ -26,6 +26,7 @@ export const DEFAULTS = {
   steamApiKey: "",        // 加密串
   steamApiFallbackKey: "",// 备用 key（加密串）
   timeThreshold: 10,      // 解锁时间超过 N 秒视为旧成就，不通知
+  firstSightGrace: 600,   // 首次监视某游戏时的宽限秒数：存档目录刚被发现的 10 分钟内解锁的成就仍通知（防"首个成就必丢"，状态持久化后不会重复）
   tick: 600,              // 防刷屏间隔 ms
   checkProcessRunning: false, // 依赖 gameIndex（原服务器已死），默认关闭
   iconPrefetch: true,

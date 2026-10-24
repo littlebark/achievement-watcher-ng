@@ -130,10 +130,10 @@ async function notify(achievement, game, options, delay = 0) {
   }
 }
 
-async function handleFileChange(folder, filePath, cfg) {
-  // 防刷屏
+async function handleFileChange(folder, filePath, cfg, { seed = false } = {}) {
+  // 防刷屏（基线读取除外：挂监视时的首次现状扫描不该被全局 tick 丢弃）
   const now = Date.now();
-  if (now - lastTick < cfg.tick) return;
+  if (!seed && now - lastTick < cfg.tick) return;
   lastTick = now;
 
   const appID = folder.appid;
@@ -164,9 +164,15 @@ async function handleFileChange(folder, filePath, cfg) {
 
     if (!prev.Achieved && cur.Achieved) {
       // 新解锁：时间阈值检查（防止打开旧存档时全量重刷通知）
+      // 首次监视该游戏（无历史状态）时放宽窗口：目录发现本身有延迟，刚解锁的成就不应因此被丢弃；
+      // 状态会持久化到 track 缓存，之后不会重复触发，不存在重启刷屏风险
       const unlockTime = cur.UnlockTime || Math.floor(Date.now() / 1000);
       const elapsed = Date.now() / 1000 - unlockTime;
-      if (folder.disableTimestampCheck || (elapsed >= 0 && elapsed <= cfg.timeThreshold)) {
+      const grace = Number.isFinite(cfg.firstSightGrace) ? cfg.firstSightGrace : 600;
+      const window = !folder.disableTimestampCheck && previous.length === 0
+        ? Math.max(cfg.timeThreshold, grace)
+        : cfg.timeThreshold;
+      if (folder.disableTimestampCheck || (elapsed >= 0 && elapsed <= window)) {
         log.info(`[UNLOCK] ${game.name} :: ${pair.schemaAchievement.displayName}${allDone ? " [全成就]" : ""}`);
         await notify(pair, game, { cfg, isLast: allDone }, j++);
       } else {
@@ -254,6 +260,30 @@ export async function startWatchdog() {
   const watchers = new Map(); // key -> { watcher, folder }
   const lastMtime = new Map(); // 文件绝对路径(小写) -> 上次处理过的 mtime，用于去重
   const queues = new Map(); // 文件绝对路径(小写) -> Promise，保证同一文件的处理串行
+
+  // 单个成就文件的统一处理入口：mtime 去重 + 串行队列。
+  // watch 回调与「挂监视时的基线读取」都走这里，保证去重/排队行为一致。
+  function processFile(folder, full, seed = false) {
+    return (async () => {
+      // 用 mtime 去重（同一版本只处理一次），替代原来「必须 1 秒内修改」的墙钟判断：
+      // 后者会把事件延迟投递、写盘稍慢的游戏更新直接丢掉，导致解锁不通知。
+      const mt = await mtimeMs(full);
+      if (mt === 0) return; // 文件被删除或还没落盘
+      const fileKey = path.resolve(full).toLowerCase();
+      if (lastMtime.get(fileKey) === mt) return;
+      lastMtime.set(fileKey, mt);
+
+      // 串行化：同一文件的多次事件排队执行，避免两次处理都判定为「新解锁」而重复弹窗
+      const prev = queues.get(fileKey) || Promise.resolve();
+      const next = prev
+        .then(() => handleFileChange(folder, full, cfg, { seed }))
+        .catch((e) => log.warn(`[WATCH] ${e.message}`))
+        .finally(() => { if (queues.get(fileKey) === next) queues.delete(fileKey); });
+      queues.set(fileKey, next);
+      return next;
+    })();
+  }
+
   function attachWatcher(folder) {
     const key = path.resolve(folder.dir).toLowerCase();
     if (watchers.has(key)) return false;
@@ -264,27 +294,20 @@ export async function startWatchdog() {
         if (eventType !== "change" && eventType !== "rename") return;
         const base = path.basename(filename);
         if (!folder.files.includes(base)) return;
-        const full = path.join(folder.dir, filename);
-
-        // 用 mtime 去重（同一版本只处理一次），替代原来「必须 1 秒内修改」的墙钟判断：
-        // 后者会把事件延迟投递、写盘稍慢的游戏更新直接丢掉，导致解锁不通知。
-        const mt = await mtimeMs(full);
-        if (mt === 0) return; // 文件被删除或还没落盘
-        const fileKey = path.resolve(full).toLowerCase();
-        if (lastMtime.get(fileKey) === mt) return;
-        lastMtime.set(fileKey, mt);
-
-        // 串行化：同一文件的多次事件排队执行，避免两次处理都判定为「新解锁」而重复弹窗
-        const prev = queues.get(fileKey) || Promise.resolve();
-        const next = prev
-          .then(() => handleFileChange(folder, full, cfg))
-          .catch((e) => log.warn(`[WATCH] ${e.message}`))
-          .finally(() => { if (queues.get(fileKey) === next) queues.delete(fileKey); });
-        queues.set(fileKey, next);
+        await processFile(folder, path.join(folder.dir, filename));
       });
       watcher.on("error", (e) => log.warn(`[WATCH] ${folder.dir}: ${e.message}`));
       watchers.set(key, { watcher, folder });
       log.info(`[WATCH] ${folder.source}: ${folder.dir} (${folder.files.join(", ")}) appid=${folder.appid ?? "?"}`);
+
+      // 挂上监视后立即读一次现状做基线。否则要等下一次文件变化才首次处理，
+      // 「首个成就解锁时才创建存档目录」的模拟器会导致第一枚成就因超时被 SKIP-OLD。
+      for (const f of folder.files) {
+        const full = path.join(folder.dir, f);
+        exists(full)
+          .then((ok) => { if (ok) return processFile(folder, full, true); })
+          .catch(() => {});
+      }
       return true;
     } catch (e) {
       log.warn(`[WATCH] 无法监视 ${folder.dir}: ${e.message}`);

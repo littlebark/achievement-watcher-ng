@@ -170,19 +170,22 @@ test("wall: schema 与缓存都缺时回退为未解锁", () => {
 
 test("config.resolveSound: 音效配置解析", async () => {
   const { resolveSound } = await import("../src/core/config.js");
-  const { dataRoot } = await import("../src/core/schema.js");
-  const path = await import("node:path");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
   assert.deepEqual(resolveSound(null), { kind: "default" });
   assert.deepEqual(resolveSound(""), { kind: "default" });
   assert.deepEqual(resolveSound("silent"), { kind: "silent" });
   assert.deepEqual(resolveSound("system:Notification.IM"), { kind: "system", name: "Notification.IM" });
-  // 绝对路径原样返回（斜杠统一成反斜杠）
-  assert.deepEqual(resolveSound("D:\\snd\\x.wav"), { kind: "wav", path: "D:\\snd\\x.wav" });
-  // 相对路径以数据目录为基准（便携约定：sounds/normal.mp3）
-  assert.deepEqual(resolveSound("sounds/normal.mp3"), { kind: "wav", path: path.join(dataRoot(), "sounds", "normal.mp3") });
-  assert.deepEqual(resolveSound({ wav: "a.mp3" }), { kind: "wav", path: path.join(dataRoot(), "a.mp3") });
   assert.deepEqual(resolveSound({ system: "Notification.Mail" }), { kind: "system", name: "Notification.Mail" });
   assert.deepEqual(resolveSound("garbage-without-ext"), { kind: "default" });
+  // 文件不存在 → 回落系统默认（而不是把坏路径交给播放端静默失败）
+  assert.deepEqual(resolveSound("D:\\snd\\nope.wav"), { kind: "default" });
+  assert.deepEqual(resolveSound("sounds/definitely-missing.mp3"), { kind: "default" });
+  // 文件存在 → wav + 绝对路径
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "aw2-snd-"));
+  const wav = path.join(dir, "x.wav");
+  await fs.promises.writeFile(wav, "RIFF");
+  assert.deepEqual(resolveSound(wav), { kind: "wav", path: wav });
 });
 
 // ---------- emuinstall.writeAccountName ----------
