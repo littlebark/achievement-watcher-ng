@@ -1,6 +1,7 @@
 // 配置加载：兼容读取原版 options.ini，叠加 aw2.json 覆盖项
 // Steam Key 沿用原版 AES-256-CBC 混淆存储（仅防误读，非安全边界）
 import path from "node:path";
+import fs from "node:fs";
 import crypto from "node:crypto";
 import * as ini from "../shared/ini.js";
 import { fsp, exists, readJSON, writeJSON } from "../shared/fsx.js";
@@ -80,14 +81,21 @@ export function resolveWallDir(cfg) {
 
 // 音效配置解析：null/"" → 系统默认；"silent" → 静音；"system:XXX" → 系统 8 音选一；
 // wav/mp3 路径 → 自定义音频（相对路径以数据目录为基准，如 "sounds/normal.mp3"）
+// 自定义文件不存在时回落系统默认提示音（而不是把坏路径丢给播放端静默失败）
 export function resolveSound(spec) {
   if (spec == null || spec === "" || spec === "default") return { kind: "default" };
   if (spec === "silent") return { kind: "silent" };
   if (typeof spec === "string" && spec.startsWith("system:")) return { kind: "system", name: spec.slice(7) };
   if (typeof spec === "object" && spec.system) return { kind: "system", name: spec.system };
-  if (typeof spec === "object" && spec.wav) return { kind: "wav", path: absolutize(spec.wav) };
-  if (typeof spec === "string" && /\.(wav|mp3)$/i.test(spec)) return { kind: "wav", path: absolutize(spec) };
+  if (typeof spec === "object" && spec.wav) return resolveWav(spec.wav);
+  if (typeof spec === "string" && /\.(wav|mp3)$/i.test(spec)) return resolveWav(spec);
   return { kind: "default" };
+}
+
+function resolveWav(p) {
+  const full = absolutize(p);
+  if (!fs.existsSync(full)) return { kind: "default" }; // 文件缺失（如便携版换盘后没拷数据）→ 系统默认音
+  return { kind: "wav", path: full };
 }
 
 // 相对路径 → 以数据目录为根（便携：音效跟项目走，不依赖系统盘绝对路径）
