@@ -70,6 +70,20 @@ export async function detectGameAppid(gameDir) {
   return walk(gameDir, 4);
 }
 
+// 扫描已打补丁（无论谁打的）但可能还没进面板的游戏：
+// 找出游戏目录里所有 emu DLL 层，从 steam_appid.txt（emu 运行的必需品）读 appid。
+// 返回 [{ appid, dir }]，按 appid 去重。
+export async function scanPatchedGames(searchDirs = [], depth = 5) {
+  const found = new Map();
+  for (const root of searchDirs) {
+    for (const dir of await findGameDirs(root, depth)) {
+      const appid = await readAppidIn(dir);
+      if (appid && !found.has(appid)) found.set(appid, dir);
+    }
+  }
+  return [...found.entries()].map(([appid, dir]) => ({ appid, dir }));
+}
+
 export async function generateEmuConfig({ appid, gameDir, lang, withIcons = true, apiKey, fallbackKey }) {
   const game = await getGameData({ appID: String(appid), lang, apiKey, fallbackKey });
   const list = game.achievement.list;

@@ -184,7 +184,8 @@ async function prefetchAchievements(btn) {
       return;
     }
     const failed = r.failed?.length || 0;
-    toast(`下载完成：新增 ${r.ok.length} 个，已缓存 ${r.cached.length} 个${failed ? `，失败 ${failed} 个` : ""}`);
+    const scannedNote = r.scanned?.length ? `，新发现 ${r.scanned.length} 个未运行的游戏` : "";
+    toast(`下载完成：新增 ${r.ok.length} 个，已缓存 ${r.cached.length} 个${scannedNote}${failed ? `，失败 ${failed} 个` : ""}`);
     if (r.ok.length) await loadLibrary(true);
   } catch (e) {
     toast(`下载失败：${e.message}`);
@@ -337,6 +338,18 @@ async function openSettings() {
 
         <div class="row">
           <div class="field">
+            <label>手动添加游戏（Steam AppID）</label>
+            <div style="display:flex;gap:8px">
+              <input id="s-addappid" type="text" inputmode="numeric" placeholder="例如 2288630" style="flex:1">
+              <button class="btn btn-ghost" id="s-addgame">下载成就数据</button>
+            </div>
+            <div class="hint">给「已打补丁但还没运行过」的游戏预下载成就清单：填 AppID 下载后它就会出现在库里（0/N，标记无存档），运行游戏解锁后自动更新。</div>
+            <div class="hint" id="s-addresult"></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
             <label>成就语言</label>
             <select id="s-lang">
               ${["schinese", "tchinese", "english", "japanese", "koreana", "russian"]
@@ -430,6 +443,28 @@ async function openSettings() {
       </div>`;
 
     $("#s-cancel").addEventListener("click", closeModal);
+    $("#s-addgame").addEventListener("click", async () => {
+      const out = $("#s-addresult");
+      const id = ($("#s-addappid").value || "").trim();
+      if (!/^\d+$/.test(id)) {
+        out.textContent = "请填写纯数字的 Steam AppID";
+        return;
+      }
+      out.textContent = `正在下载 ${id} 的成就数据…`;
+      try {
+        const r = await api("/api/schema/prefetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ appids: [id], force: false }),
+        });
+        if (r.ok?.length) out.textContent = `✅ ${id} 已下载，关掉设置后就能在库里看到它了`;
+        else if (r.cached?.length) out.textContent = `✅ ${id} 已有缓存，关掉设置即可看到`;
+        else out.textContent = `❌ 下载失败：${r.failed?.[0]?.error || "未知错误"}`;
+        await loadLibrary(true);
+      } catch (e) {
+        out.textContent = `❌ ${e.message}`;
+      }
+    });
     $("#s-save").addEventListener("click", async () => {
       try {
         const body = {

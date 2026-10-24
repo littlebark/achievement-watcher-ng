@@ -11,7 +11,7 @@ import { getWatchFolders, loadUserDirs } from "./core/discover.js";
 import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
 import { matchAchievements } from "./core/match.js";
-import { detectGameAppid } from "./core/emugen.js";
+import { detectGameAppid, scanPatchedGames } from "./core/emugen.js";
 import { applyEmu } from "./core/emuinstall.js";
 import { log } from "./shared/log.js";
 
@@ -299,10 +299,18 @@ async function prefetchAllAchievements(force = false) {
   const cfg = await loadConfig();
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
   const folders = await getWatchFolders({ userDirs });
+  const known = new Set(folders.map((f) => String(f.appid)).filter(Boolean));
+
+  // 自动扫描游戏目录里"已打补丁但还没运行"的游戏（appid 来自 emu 必需的 steam_appid.txt，零输入）
+  const scanned = (await scanPatchedGames(resolvedPaths(cfg).gameSearchDirs))
+    .map((s) => s.appid)
+    .filter((id) => !known.has(String(id)));
+
   const appids = [
     ...new Set([
-      ...folders.map((f) => f.appid).filter(Boolean),
+      ...known,
       ...(await cachedSchemaAppids(cfg.lang)),
+      ...scanned,
     ]),
   ];
 
@@ -317,7 +325,7 @@ async function prefetchAllAchievements(force = false) {
       force,
       onProgress: (x) => log.info(`[PREFETCH] ${x.appid} ${x.status}${x.name ? " " + x.name : ""}`),
     });
-    prefetchState = { running: false, at: Date.now(), result };
+    prefetchState = { running: false, at: Date.now(), result: { ...result, scanned } };
     libCache = { at: 0, data: null };
     return result;
   } catch (e) {
