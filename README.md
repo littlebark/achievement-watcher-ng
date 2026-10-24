@@ -12,13 +12,17 @@ Toast/WebSocket 通知形态均参考原项目。代码为独立重写（Node ES
 
 ## 快速开始（新人三步）
 
+**普通用户（推荐）**：下载 `dist\aw2-desktop-portable.exe`（约 118MB，绿色单文件，无需安装、无需 Node.js）→ 放到任意目录双击运行 → 点右下角托盘图标打开面板填 Steam API Key → 完事。数据（配置/缓存/成就墙）自动落在 exe 旁的 `data\` 文件夹，删掉 exe 和 data 即彻底卸载。
+
+**开发者 / 源码运行**：
+
 1. **装环境**：Node.js 18+，然后在项目目录执行 `npm install`；再进 `electron\` 执行一次 `npm install`（Electron 桌面版运行时）
 2. **填 API Key**：`node src\cli.js setkey <KEY>`（[免费申请](https://steamcommunity.com/dev/apikey)）
 3. **双击 `aw2-desktop.vbs`**：右下角出现奖杯托盘图标即启动成功（后台监视 + 自绘弹窗 + 面板服务全在这一个进程里）
 
 之后所有配置（游戏目录、下载成就、打补丁、音效、稀有阈值）都在面板里改：**点托盘图标**或浏览器打开 `http://127.0.0.1:5179`。成就解锁时右下角滑入 Xbox 风格卡片（普通绿条 5 秒 / 稀有金条 10 秒，稀有音效可自备）。
 
-> 不想用桌面版？`start-ui.bat` + `start-watchdog.bat` 是等价的手动组合（面板与本机 Node 环境独立跑）。
+> 不想用桌面版？`start-ui.bat` + `start-watchdog.bat` 是等价的手动组合（面板与本机 Node 环境独立跑）。打包 exe 自己构建：项目根目录 `npm run dist`（需联网下载 Electron，国内建议设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
 
 ## 脚本一览
 
@@ -291,5 +295,6 @@ node src\cli.js path reset <字段>                    :: 恢复内置默认
   - **诊断日志**：主进程记录 preload 出错 / 页面加载失败 / 渲染进程退出 / renderer console 错误（`data\logs\aw2-desktop.log`），排查「静默没反应」不再盲猜。
   - **测试广播修复**：WS `cmd:test` 原先只回给请求方，现广播到所有客户端（含弹窗与 OBS overlay），并附带普通+稀有两张测试卡片。
   - **开机自启**：启动文件夹放置 `Achievement Watcher Desktop.vbs`（隐藏启动，链 `aw2-desktop.vbs`）；旧版 `Achievement Watcher NG.vbs` 已停用（重命名为 `.disabled`）。
-  - **内置面板 + 托盘图标**：桌面版主进程直接 `startUI()`（复用原面板服务），`http://127.0.0.1:5179` 随桌面版常驻，改配置点托盘图标即可；托盘左键开面板、右键菜单可退出。端口被占时只记日志（不再误杀整个桌面版）。`start-ui.bat` 仍保留给不用桌面版的场景。
+  - **内置面板 + 托盘图标**：桌面版主进程直接 `startUI()`（复用原面板服务），`http://127.0.0.1:5179` 随桌面版常驻，改配置点托盘图标即可；托盘左键开面板、右键菜单含开机自启开关与退出。端口被占时只记日志（不再误杀整个桌面版）。`start-ui.bat` 仍保留给不用桌面版的场景。
+  - **portable exe 打包**：electron-builder 产出 `dist\aw2-desktop-portable.exe`（单文件 118MB，绿色免安装，无需 Node.js）。打包版数据落在 exe 旁 `data\`（portable 运行时经 `PORTABLE_EXECUTABLE_DIR` 定位真实路径）；vendor 7z 经 `asarUnpack` 落到真实磁盘（emuinstall 相应修了 asar 路径，tar 子进程读不了 asar 虚拟路径）；应用图标为内置生成的奖杯 ICO。与源码运行形态共存，产物不入库。
 

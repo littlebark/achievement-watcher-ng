@@ -30,6 +30,15 @@ function manifestDir() {
   return path.join(dataRoot(), "tools", "emu-install");
 }
 
+// vendor 根：打包版（asar）时 vendor 被 asarUnpack 到 app.asar.unpacked 旁，
+// 子进程（tar 解 7z）读不了 asar 虚拟路径，必须用真实磁盘路径
+function vendorRoot() {
+  if (projectRoot.includes("app.asar")) {
+    return path.join(projectRoot.replace("app.asar", "app.asar.unpacked"), "vendor");
+  }
+  return path.join(projectRoot, "vendor");
+}
+
 // 找到可用的 emu 源目录（含 steam_api64.dll）
 // 优先级：--source 显式指定 → 用户配置 emuRoots → emuExtraSources → 内置 vendor 包自动展开
 export async function resolveEmuSource(explicit) {
@@ -43,7 +52,7 @@ export async function resolveEmuSource(explicit) {
     return null;
   };
 
-  const vendorDir = path.join(projectRoot, "vendor", "steam-emu");
+  const vendorDir = path.join(vendorRoot(), "steam-emu");
   let src = await pick([explicit, ...paths.emuRoots, ...paths.emuExtraSources, vendorDir]);
   if (!src) src = await expandVendoredEmu(); // 开箱兜底：解压项目内置的 gbe_fork 包
   if (!src) {
@@ -60,7 +69,7 @@ export async function resolveEmuSource(explicit) {
 // 项目内置 emu 源（vendor/steam-emu/*.7z）：首次使用时用系统 tar 只解出 regular 版
 // steam_api64.dll / steam_api.dll 到 <数据目录>/tools/steam-emu，之后走正常候选流程
 async function expandVendoredEmu() {
-  const vendorDir = path.join(projectRoot, "vendor", "steam-emu");
+  const vendorDir = path.join(vendorRoot(), "steam-emu");
   let entries = [];
   try { entries = await fsp.readdir(vendorDir); } catch { return null; }
   const pkg = entries.find((f) => /\.7z$/i.test(f));

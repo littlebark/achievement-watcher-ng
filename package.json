@@ -1,18 +1,53 @@
 {
   "name": "achievement-watcher-ng",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rewrite of xan105/Achievement-Watcher: achievement file parser with live notification",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
-  "main": "src/watchdog/watchdog.js",
+  "main": "electron/main.js",
   "scripts": {
     "watchdog": "node src/cli.js watch",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "dist": "electron-builder --win portable"
   },
   "dependencies": {
     "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.aw2.desktop",
+    "productName": "Achievement Watcher NG",
+    "electronVersion": "45.0.0",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "package.json",
+      "electron/main.js",
+      "electron/preload.js",
+      "electron/overlay.html",
+      "electron/overlay.js",
+      "electron/tray.png",
+      "src/**",
+      "web/**",
+      "vendor/**"
+    ],
+    "asarUnpack": [
+      "vendor/**"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "aw2-desktop-portable.exe"
+    }
   },
   "license": "LGPL-3.0-only"
 }

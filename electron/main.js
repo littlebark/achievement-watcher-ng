@@ -21,6 +21,14 @@ app.commandLine.appendSwitch("disable-gpu-compositing");
 
 // userData 隔离：默认会落到 %APPDATA%\Electron（与其他未打包应用共用），改成自己的目录
 import { dataRoot } from "../src/core/schema.js";
+
+// 打包版（portable exe）：数据放真实 exe 旁的 data\，绿色便携，删 exe+data 即彻底卸载
+// portable 目标运行时 execPath 指向临时解压目录，PORTABLE_EXECUTABLE_DIR 才是用户手里的 exe 位置
+if (app.isPackaged) {
+  const base = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath("exe"));
+  process.env.AW2_DATA_ROOT = path.join(base, "data");
+}
+
 app.setPath("userData", path.join(dataRoot(), "desktop-profile"));
 
 // 单实例：同一桌面版只跑一份（watchdog 自身还有 data/aw2.lock 锁防节点版并行）
@@ -117,13 +125,28 @@ function openPanel() {
   return shell.openExternal(`http://127.0.0.1:${uiPort}`);
 }
 
-// 托盘图标：左键打开面板，右键菜单含退出（这是桌面版唯一的可见入口）
+// 托盘图标：左键打开面板，右键菜单含开机自启开关与退出（这是桌面版唯一的可见入口）
+function exePathForAutostart() {
+  // portable exe 的 execPath 在临时解压目录，注册自启必须用用户手里的真实 exe 路径
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    return path.join(process.env.PORTABLE_EXECUTABLE_DIR, path.basename(process.execPath));
+  }
+  return process.execPath;
+}
+
 function createTray() {
   tray = new Tray(path.join(__dirname, "tray.png"));
   tray.setToolTip("成就查看工具（点击打开面板）");
   tray.on("click", openPanel);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "打开面板", click: openPanel },
+    { type: "separator" },
+    {
+      label: "开机自启",
+      type: "checkbox",
+      checked: app.getLoginItemSettings({ path: exePathForAutostart() }).openAtLogin,
+      click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked, path: exePathForAutostart() }),
+    },
     { type: "separator" },
     { label: "退出", click: () => { tray?.destroy(); app.quit(); } },
   ]));

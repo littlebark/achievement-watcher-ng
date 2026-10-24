@@ -20,3 +20,6 @@ test/*.png
 
 # 桌面版（Electron 子项目）
 electron/node_modules/
+
+# 打包产物
+dist/
