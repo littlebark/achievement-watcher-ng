@@ -178,7 +178,42 @@ async function findExeDir(root, dllDirs = [], depth = 3) {
   return scored[0].dir;
 }
 
-export async function applyEmu({ appid, gameDir, mode = "regular", source, withIcons = true, dryRun = false, lang, apiKey, fallbackKey }) {
+// 把 account_name 写进 steam_settings/configs.user.ini 的 [user::general] 段。
+// 游戏本地层优先级高于全局 GSE Saves 设置，可覆盖下载站预置的名字；文件里其他字段原样保留。
+export async function writeAccountName(settingsDir, name) {
+  const file = path.join(settingsDir, "configs.user.ini");
+  let lines = [];
+  if (await exists(file)) lines = (await fsp.readFile(file, "utf8")).split(/\r?\n/);
+  if (!lines.some((l) => /^\s*\[user::general\]/i.test(l))) lines = ["[user::general]", ...lines];
+  let replaced = false;
+  lines = lines.map((l) => {
+    if (!replaced && /^\s*account_name\s*=/i.test(l)) {
+      replaced = true;
+      return `account_name=${name}`;
+    }
+    return l;
+  });
+  if (!replaced) {
+    const gi = lines.findIndex((l) => /^\s*\[user::general\]/i.test(l));
+    lines.splice(gi + 1, 0, `account_name=${name}`);
+  }
+  await fsp.writeFile(file, lines.join("\n") + "\n", "utf8");
+  return file;
+}
+
+// 游戏内用户名的默认解析链：显式输入 > 全局 gbe_fork 配置里用户设过的名字 > Windows 用户名
+export async function resolveAccountName(explicit) {
+  const s = (explicit || "").trim();
+  if (s) return s;
+  try {
+    const g = path.join(process.env.APPDATA || "", "GSE Saves", "settings", "configs.user.ini");
+    const m = (await fsp.readFile(g, "utf8")).match(/^\s*account_name\s*=\s*(\S.*?)\s*$/m);
+    if (m?.[1]) return m[1];
+  } catch { /* 没有全局配置，继续降级 */ }
+  return process.env.USERNAME || "Player";
+}
+
+export async function applyEmu({ appid, gameDir, mode = "regular", source, withIcons = true, dryRun = false, lang, apiKey, fallbackKey, userName }) {
   const src = await resolveEmuSource(source);
   const root = path.resolve(gameDir);
   const dllDirs = await findDllDirs(root);
@@ -244,6 +279,12 @@ export async function applyEmu({ appid, gameDir, mode = "regular", source, withI
     genResults.push({ dir: r.settingsDir, total: r.total, icons: r.icons });
   }
 
+  // 游戏内用户名（account_name）：有传入才写，保证补丁自包含
+  let userIniFile = null;
+  if (userName) {
+    for (const g of genResults) userIniFile = await writeAccountName(g.dir, userName);
+  }
+
   const manifest = {
     appid: String(appid),
     gameDir: root,
@@ -257,7 +298,7 @@ export async function applyEmu({ appid, gameDir, mode = "regular", source, withI
   const mf = path.join(manifestDir(), `${stamp}-${appid}.json`);
   await writeJSON(mf, manifest);
 
-  return { manifestFile: mf, mode, exeDir, applied, genResults };
+  return { manifestFile: mf, mode, exeDir, applied, genResults, accountName: userName || null, userIniFile };
 }
 
 // 回滚到最近一次安装前的状态

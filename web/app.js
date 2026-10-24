@@ -247,6 +247,12 @@ async function renderPatchPicker(dir) {
           : "<div class='hint'>（没有子目录）</div>"}</div>
       </div>
 
+      <div class="field">
+        <label>游戏内用户名（可选）</label>
+        <input id="p-user" type="text" value="${esc(patchUserDraft)}" placeholder="留空 = 全局配置的名字，没有则用 Windows 用户名">
+        <div class="hint">写入游戏 steam_settings\\configs.user.ini 的 account_name，即游戏里显示的玩家名（可覆盖下载站预置的名字）。</div>
+      </div>
+
       <div class="row">
         <button id="p-apply" class="btn" ${d.path ? "" : "disabled"}>开始打补丁</button>
         <span id="p-msg" class="hint"></span>
@@ -256,10 +262,13 @@ async function renderPatchPicker(dir) {
   modalBody.querySelectorAll(".pick").forEach((el) =>
     el.addEventListener("click", () => renderPatchPicker(el.dataset.path))
   );
+  $("#p-user").addEventListener("input", (e) => { patchUserDraft = e.target.value; });
   $("#p-go").addEventListener("click", () => renderPatchPicker($("#p-dir").value.trim()));
   if ($("#p-up")) $("#p-up").addEventListener("click", () => renderPatchPicker(d.parent));
   $("#p-apply").addEventListener("click", () => applyPatch(d.path));
 }
+
+let patchUserDraft = "";
 
 async function applyPatch(dir) {
   const btn = $("#p-apply");
@@ -270,8 +279,9 @@ async function applyPatch(dir) {
     const r = await api("/api/emu/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dir, withIcons: true }),
+      body: JSON.stringify({ dir, withIcons: true, userName: ($("#p-user")?.value || "").trim() }),
     });
+    patchUserDraft = "";
     modalBody.innerHTML = `
       <div class="settings">
         <h2>✅ 补丁完成</h2>
@@ -287,6 +297,7 @@ async function applyPatch(dir) {
               ].filter(Boolean).join("；")}</div>`
             : ""}
           <div>成就清单：${r.settingsDirs.map((s) => `${esc(s.dir)} → ${s.total} 条${s.icons ? `，图标 ${s.icons.ok} 张` : ""}`).join("<br>")}</div>
+          ${r.accountName ? `<div>游戏内用户名：<b>${esc(r.accountName)}</b>（下次进游戏生效）</div>` : ""}
           <div>Steam 成就数据：${r.schema === "downloaded" ? "已下载到本地" : r.schema === "cached" ? "已有缓存" : `下载失败（${esc(r.schemaError || "网络问题")}）`}</div>
         </div>
         <p class="hint">现在可以直接启动游戏。想撤销就在命令行运行 <code>node src\\cli.js emu-restore ${esc(r.appid)}</code>。</p>

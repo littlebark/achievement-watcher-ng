@@ -12,7 +12,7 @@ import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
 import { matchAchievements } from "./core/match.js";
 import { detectGameAppid, scanPatchedGames } from "./core/emugen.js";
-import { applyEmu } from "./core/emuinstall.js";
+import { applyEmu, resolveAccountName } from "./core/emuinstall.js";
 import { log } from "./shared/log.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -357,7 +357,7 @@ function detectPatchState(dir, entries) {
 }
 
 // ---------- 模拟器补丁（网页端选目录 → 生成成就配置 → 替换 DLL 并备份） ----------
-async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
+async function emuApplyDir({ dir, withIcons = true, mode = "regular", userName } = {}) {
   if (!dir || typeof dir !== "string") throw new Error("请提供游戏目录");
   const gameDir = path.resolve(dir.trim());
   const st = await fsp.stat(gameDir).catch(() => null);
@@ -370,6 +370,7 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
 
   const cfg = await loadConfig();
   const preState = detectPatchState(gameDir, await fsp.readdir(gameDir, { withFileTypes: true }));
+  const accountName = await resolveAccountName(userName); // 输入 > 全局 GSE 配置 > Windows 用户名
 
   const r = await applyEmu({
     appid,
@@ -379,6 +380,7 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
     lang: cfg.lang,
     apiKey: cfg._primaryKey,
     fallbackKey: cfg._fallbackKey,
+    userName: accountName,
   });
 
   // 打完补丁顺手把该游戏的成就 schema 拉全（之后离线也能立刻弹通知）
@@ -401,6 +403,8 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular" } = {}) {
     replaced: r.applied.filter((x) => x.backup).length,
     written: r.applied.filter((x) => !x.backup).length,
     settingsDirs: r.genResults.map((g) => ({ dir: g.dir, total: g.total, icons: g.icons })),
+    accountName: r.accountName,
+    userIniFile: r.userIniFile,
     manifest: r.manifestFile,
     schema: pre.ok.length ? "downloaded" : pre.cached.length ? "cached" : "failed",
     schemaError: pre.failed[0]?.error || null,

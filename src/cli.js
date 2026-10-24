@@ -118,13 +118,16 @@ async function cmdEmuGen(appid, gameDir, flags = []) {
 
 async function cmdEmuApply(appid, gameDir, flags = []) {
   if (!appid || !/^\d+$/.test(appid)) {
-    return console.log("用法: node src/cli.js emu-apply <appid> [游戏目录] [--steamclient] [--dry-run] [--no-icons] [--source <emu目录>]");
+    return console.log("用法: node src/cli.js emu-apply <appid> [游戏目录] [--steamclient] [--dry-run] [--no-icons] [--source <emu目录>] [--user <游戏内用户名>]");
   }
   const mode = flags.includes("--steamclient") ? "steamclient" : "regular";
   const dryRun = flags.includes("--dry-run");
   const withIcons = !flags.includes("--no-icons");
   const si = flags.indexOf("--source");
   const source = si >= 0 ? flags[si + 1] : undefined;
+  const ui = flags.indexOf("--user");
+  const { resolveAccountName } = await import("./core/emuinstall.js");
+  const userName = await resolveAccountName(ui >= 0 ? flags[ui + 1] : "");
   const cfg = await loadConfig();
 
   let dir = gameDir;
@@ -139,6 +142,7 @@ async function cmdEmuApply(appid, gameDir, flags = []) {
   const r = await applyEmu({
     appid, gameDir: dir, mode, source, withIcons, dryRun,
     lang: cfg.lang, apiKey: cfg._primaryKey, fallbackKey: cfg._fallbackKey,
+    userName,
   });
 
   if (r.dryRun) {

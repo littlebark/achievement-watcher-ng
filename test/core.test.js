@@ -184,3 +184,24 @@ test("config.resolveSound: 音效配置解析", async () => {
   assert.deepEqual(resolveSound({ system: "Notification.Mail" }), { kind: "system", name: "Notification.Mail" });
   assert.deepEqual(resolveSound("garbage-without-ext"), { kind: "default" });
 });
+
+// ---------- emuinstall.writeAccountName ----------
+test("emuinstall.writeAccountName: 新建/覆盖 account_name 且保留其他字段", async () => {
+  const { writeAccountName } = await import("../src/core/emuinstall.js");
+  const { readFile } = await import("node:fs/promises");
+  const dir = await mkdtemp(path.join(tmpdir(), "aw2-acct-"));
+
+  // 1) 无文件 → 新建
+  const f = await writeAccountName(dir, "Alice");
+  let txt = await readFile(f, "utf8");
+  assert.match(txt, /^\[user::general\]\naccount_name=Alice\n$/);
+
+  // 2) 已有文件（含 language 等其他字段）→ 只换名字
+  await writeFile(path.join(dir, "configs.user.ini"), "[user::general]\r\naccount_name=GAMER520\r\nlanguage=schinese\r\nip_country=US\r\n", "utf8");
+  await writeAccountName(dir, "lihualuo");
+  txt = await readFile(f, "utf8");
+  assert.match(txt, /account_name=lihualuo/);
+  assert.doesNotMatch(txt, /GAMER520/);
+  assert.match(txt, /language=schinese/);
+  assert.match(txt, /ip_country=US/);
+});
