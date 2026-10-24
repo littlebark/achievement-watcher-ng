@@ -359,6 +359,21 @@ async function openSettings() {
           <label class="check"><input id="s-notify" type="checkbox" ${s.notify ? "checked" : ""}> 解锁时弹出 Windows 通知</label>
           <label class="check" style="margin-top:8px"><input id="s-prefetch" type="checkbox" ${s.iconPrefetch ? "checked" : ""}> 预下载成就图标（通知里显示图片）</label>
           <label class="check" style="margin-top:8px"><input id="s-ws" type="checkbox" ${s.websocket?.enabled ? "checked" : ""}> 启用 WebSocket 广播（给直播/悬浮窗用）</label>
+          <div class="hint" style="margin-top:12px">稀有成就音效（Xbox 钻石成就式）：全球解锁率 ≤ 阈值即视为稀有。音效填 .wav 完整路径（任意音频），或 system:Notification.IM 等系统音；留空 = 系统默认声。</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+            <div style="flex:1;min-width:120px">
+              <label>稀有判定阈值（%）</label>
+              <input id="s-rareth" type="number" min="0" max="100" value="${s.sound?.rareThreshold ?? 10}">
+            </div>
+            <div style="flex:2;min-width:200px">
+              <label>普通成就音效</label>
+              <input id="s-sndnormal" type="text" value="${esc(s.sound?.normal ?? "")}" placeholder="留空 = 系统默认">
+            </div>
+            <div style="flex:2;min-width:200px">
+              <label>稀有成就音效</label>
+              <input id="s-sndrare" type="text" value="${esc(s.sound?.rare ?? "")}" placeholder="例如 C:\\Windows\\Media\\tada.wav">
+            </div>
+          </div>
         </div>
 
         <div class="field">
@@ -418,6 +433,11 @@ async function openSettings() {
           notify: $("#s-notify").checked,
           iconPrefetch: $("#s-prefetch").checked,
           websocket: { enabled: $("#s-ws").checked, port: +$("#s-wsport").value },
+          sound: {
+            rareThreshold: +$("#s-rareth").value,
+            normal: $("#s-sndnormal").value,
+            rare: $("#s-sndrare").value,
+          },
           ui: { port: +$("#s-uiport").value || 0 },
           steamApiKey: $("#s-key").value,
           steamApiFallbackKey: $("#s-key2").value,

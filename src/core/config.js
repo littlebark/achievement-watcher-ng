@@ -32,6 +32,11 @@ export const DEFAULTS = {
   websocket: { enabled: true, port: 8082, auth: null },
   action: { target: "", cwd: "", hide: true }, // 解锁时执行的外部命令，注入 AW_* 环境变量
   toast: { appId: null },  // 自定义 AUMID；null=自动选 PowerShell AUMID
+  sound: {
+    rareThreshold: 10,     // 全球解锁率 ≤ 此百分比视为稀有成就（Xbox 钻石成就同级标准）
+    normal: null,          // 普通成就音效：null/""=系统默认；"silent"；"system:Notification.IM"；wav 完整路径
+    rare: "C:\\Windows\\Media\\tada.wav", // 稀有成就音效（Xbox 式区分；填 wav 路径或 system:）
+  },
   wall: { dir: "", enabled: true }, // 成就墙导出目录（空=默认 <数据目录>/AchievementWall；enabled:false 可整体关闭）
   ui: { port: 0 },         // 面板端口；0 = 内置默认 5179
   paths: {
@@ -68,6 +73,17 @@ export function resolvedPaths(cfg) {
 export function resolveWallDir(cfg) {
   if (cfg?.wall?.enabled === false) return null;
   return cfg?.wall?.dir || defaultWallDir();
+}
+
+// 音效配置解析：null/"" → 系统默认；"silent" → 静音；"system:XXX" → 系统 8 音选一；wav 路径 → 自定义音频
+export function resolveSound(spec) {
+  if (spec == null || spec === "" || spec === "default") return { kind: "default" };
+  if (spec === "silent") return { kind: "silent" };
+  if (typeof spec === "string" && spec.startsWith("system:")) return { kind: "system", name: spec.slice(7) };
+  if (typeof spec === "object" && spec.system) return { kind: "system", name: spec.system };
+  if (typeof spec === "object" && spec.wav) return { kind: "wav", path: spec.wav };
+  if (typeof spec === "string" && /\.(wav|mp3)$/i.test(spec)) return { kind: "wav", path: spec };
+  return { kind: "default" };
 }
 
 export async function loadConfig() {

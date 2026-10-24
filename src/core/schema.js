@@ -82,6 +82,10 @@ export async function prefetchSchemas({
         const data = await getGameData({ appID: appid, lang, apiKey, fallbackKey, force });
         result.ok.push(appid);
         onProgress?.({ appid, status: "ok", name: data.name });
+        // 顺带预热全球解锁率（稀有度判定用）；失败不影响主流程
+        if (apiKey) {
+          try { await getGlobalPercentages({ appID: appid, apiKey }); } catch { /* ignore */ }
+        }
       } catch (e) {
         result.failed.push({ appid, error: e.message });
         onProgress?.({ appid, status: "failed", error: e.message });
@@ -95,6 +99,54 @@ export async function prefetchSchemas({
 }
 
 const RETRY_DELAYS = [400, 1200, 2500]; // 网络抖动重试（Steam API 偶发 TLS/连接重置）
+
+// 全球解锁率（稀有度判定）：ISteamUserStats/GetGlobalAchievementPercentagesForApp
+// 返回 { [apiname]: 全球解锁百分比 }；缓存 30 天（该数据变化极慢）；失败返回 null，绝不阻塞通知
+const GLOBAL_TTL = 30 * 24 * 3600 * 1000;
+
+export async function getGlobalPercentages({ appID, apiKey }) {
+  const filePath = path.join(dataRoot(), "steam_cache", "global", `${appID}.db`);
+  if (await isYoungerThan(filePath, GLOBAL_TTL)) {
+    try { return JSON.parse(await fsp.readFile(filePath, "utf8")); } catch { /* 重新拉取 */ }
+  }
+  try {
+    // https 不通时降级 http（全球统计为非敏感数据；部分网络环境对 api.steampowered.com 的 TLS 很不稳）
+    const urls = [
+      `https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?key=${apiKey}&gameid=${appID}&format=json`,
+      `http://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?key=${apiKey}&gameid=${appID}&format=json`,
+    ];
+    let data = null, lastErr;
+    outer: for (const url of urls) {
+      for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`STEAM_API_${res.status}`);
+          data = await res.json();
+          break outer;
+        } catch (e) {
+          lastErr = e;
+          if (attempt === RETRY_DELAYS.length) break;
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+        }
+      }
+    }
+    if (!data) throw lastErr || new Error("no response");
+    const list = data?.achievementpercentages?.achievements || [];
+    if (!list.length) return null;
+    const map = {};
+    for (const a of list) map[a.name] = +a.percent;
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(filePath, JSON.stringify(map));
+    return map;
+  } catch (e) {
+    log.warn(`全球解锁率获取失败 ${appID}: ${e.message}`);
+    if (await exists(filePath)) {
+      try { return JSON.parse(await fsp.readFile(filePath, "utf8")); } catch { /* ignore */ }
+    }
+    return null;
+  }
+}
+
 async function fetchSchema(appID, lang, key) {
   const url = `https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v0002/?key=${key}&appid=${appID}&l=${lang}&format=json`;
 

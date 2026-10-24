@@ -167,3 +167,15 @@ test("wall: schema 与缓存都缺时回退为未解锁", () => {
   const out = normalizeProgress([{ name: "X" }], [], []);
   assert.deepEqual(out, [{ name: "X", achieved: 0, unlockTime: 0, curProgress: 0, maxProgress: 0 }]);
 });
+
+test("config.resolveSound: 音效配置解析", async () => {
+  const { resolveSound } = await import("../src/core/config.js");
+  assert.deepEqual(resolveSound(null), { kind: "default" });
+  assert.deepEqual(resolveSound(""), { kind: "default" });
+  assert.deepEqual(resolveSound("silent"), { kind: "silent" });
+  assert.deepEqual(resolveSound("system:Notification.IM"), { kind: "system", name: "Notification.IM" });
+  assert.deepEqual(resolveSound("D://snd//x.wav"), { kind: "wav", path: "D://snd//x.wav" });
+  assert.deepEqual(resolveSound({ wav: "a.mp3" }), { kind: "wav", path: "a.mp3" });
+  assert.deepEqual(resolveSound({ system: "Notification.Mail" }), { kind: "system", name: "Notification.Mail" });
+  assert.deepEqual(resolveSound("garbage-without-ext"), { kind: "default" });
+});

@@ -456,6 +456,11 @@ async function getSettings() {
     tick: cfg.tick,
     websocket: cfg.websocket,
     toast: cfg.toast,
+    sound: {
+      rareThreshold: cfg.sound?.rareThreshold ?? 10,
+      normal: cfg.sound?.normal ?? "",
+      rare: cfg.sound?.rare ?? "",
+    },
     hasKey: !!cfg._primaryKey,
     keyMasked: maskKey(cfg._primaryKey),
     hasFallbackKey: !!cfg._fallbackKey,
@@ -485,6 +490,14 @@ async function updateSettings(body) {
   if (typeof body.iconPrefetch === "boolean") cfg.iconPrefetch = body.iconPrefetch;
   if (Number.isFinite(+body.timeThreshold) && +body.timeThreshold >= 0) cfg.timeThreshold = +body.timeThreshold;
   if (Number.isFinite(+body.tick) && +body.tick >= 0) cfg.tick = +body.tick;
+  if (body.sound && typeof body.sound === "object") {
+    cfg.sound = {
+      rareThreshold: Number.isFinite(+body.sound.rareThreshold) && +body.sound.rareThreshold >= 0 && +body.sound.rareThreshold <= 100
+        ? +body.sound.rareThreshold : (cfg.sound?.rareThreshold ?? 10),
+      normal: typeof body.sound.normal === "string" ? body.sound.normal.trim() : (cfg.sound?.normal ?? null),
+      rare: typeof body.sound.rare === "string" ? body.sound.rare.trim() : (cfg.sound?.rare ?? null),
+    };
+  }
   if (body.websocket && typeof body.websocket === "object") {
     cfg.websocket = {
       enabled: !!body.websocket.enabled,

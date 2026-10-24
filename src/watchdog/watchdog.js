@@ -43,6 +43,24 @@ async function notify(achievement, game, options, delay = 0) {
   // WebSocket 广播（不依赖图标本地化）
   if (options.cfg.websocket?.enabled) broadcast(payload);
 
+  // 稀有度判定（Xbox 钻石成就式）：全球解锁率 ≤ 阈值视为稀有。
+  // 数据来自 Steam 全球统计接口（缓存 30 天，启动时已预取），取不到就按普通处理，绝不阻塞通知。
+  let rare = false, rarePercent = null;
+  const threshold = options.cfg.sound?.rareThreshold;
+  if (typeof threshold === "number" && threshold >= 0) {
+    try {
+      const { getGlobalPercentages } = await import("../core/schema.js");
+      const gp = await getGlobalPercentages({ appID: game.appid, apiKey: options.cfg._primaryKey });
+      const apiname = achievement.schemaAchievement.name;
+      if (gp && apiname in gp) {
+        rarePercent = gp[apiname];
+        rare = rarePercent <= threshold;
+      }
+    } catch { /* 不阻塞 */ }
+  }
+  payload.rare = rare;
+  if (rare) payload.rarePercent = rarePercent;
+
   // Toast
   if (options.cfg.notify) {
     try {
@@ -53,8 +71,12 @@ async function notify(achievement, game, options, delay = 0) {
         message: `${payload.game} — ${payload.description || "Achievement unlocked!"}`,
         icon,
         appId: options.cfg.toast?.appId,
+        sound: rare ? options.cfg.sound?.rare : options.cfg.sound?.normal,
+        attribution: rare && rarePercent != null
+          ? `稀有成就 · 全球仅 ${rarePercent.toFixed(1)}% 玩家解锁`
+          : null,
       });
-      log.info(`[NOTIFY] ${payload.game} :: ${payload.displayName}`);
+      log.info(`[NOTIFY] ${payload.game} :: ${payload.displayName}${rare ? ` [稀有 ${rarePercent?.toFixed(1)}%]` : ""}`);
     } catch (e) {
       log.error(`[NOTIFY] ${e.message}`);
     }
