@@ -173,6 +173,40 @@
     .card.minimal .game { font-size: 10px; }
     .card.minimal .desc, .card.minimal .badge, .card.minimal .progress { display: none; }
     .card.minimal.rare { border-color: rgba(232, 195, 82, 0.4); }
+
+    /* 6. xbox：Xbox 风格——更高、大圆图标带光环、厚进度条 */
+    .card.xbox {
+      padding: 18px 20px;
+      border-radius: 8px;
+      background:
+        radial-gradient(120% 140% at 0% 50%, rgba(16, 124, 16, 0.3), transparent 55%),
+        #0d0f0c;
+      border: 1px solid rgba(155, 240, 11, 0.25);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+    }
+    .card.xbox::before {
+      width: 4px;
+      background: linear-gradient(180deg, #9bf00b, #107c10);
+    }
+    .card.xbox .icon {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      border: 2px solid rgba(155, 240, 11, 0.5);
+      box-shadow: 0 0 18px rgba(155, 240, 11, 0.25);
+      background: #15180f;
+    }
+    .card.xbox .game { color: #9bf00b; }
+    .card.xbox .title { font-size: 18px; margin: 3px 0 5px; }
+    .card.xbox .desc { font-size: 12.5px; color: #aab3a5; -webkit-line-clamp: 3; }
+    .card.xbox .progress { margin-top: 10px; height: 6px; border-radius: 3px; background: #23281c; }
+    .card.xbox .progress > div {
+      background: linear-gradient(90deg, #107c10, #9bf00b);
+      box-shadow: 0 0 10px rgba(155, 240, 11, 0.4);
+    }
+    .card.xbox.rare { border-color: rgba(232, 195, 82, 0.4); }
+    .card.xbox.rare .game { color: #e8c352; }
+    .card.xbox.rare::before { background: linear-gradient(180deg, #e8c352, #b8860b); }
   </style>
 </head>
 <body>

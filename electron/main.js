@@ -133,6 +133,7 @@ function previewStyles() {
     { style: "light", displayName: "③ 浅色卡片" },
     { style: "steam", displayName: "④ Steam 蓝调" },
     { style: "minimal", displayName: "⑤ 极简单行" },
+    { style: "xbox", displayName: "⑥ Xbox 风格" },
   ];
   for (const v of variants) win.webContents.send("aw2:achievement", { ...base, ...v });
 }
