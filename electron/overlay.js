@@ -41,11 +41,8 @@ function pump() {
 function addCard(p) {
   const rare = !!p.rare;
   const card = document.createElement("div");
-  // 样式：默认 Steam 蓝调；style 字段仅用于预览切换（classic = 旧默认深色）
-  const STYLES = ["glass", "light", "steam", "minimal", "xbox", "classic"];
-  const styleName = STYLES.includes(p.style) ? p.style : "steam";
-  const styleClass = styleName !== "classic" ? " " + styleName : "";
-  card.className = "card" + styleClass + (rare ? " rare" : "");
+  // 样式固定 Steam 蓝调（.card 基础样式 + .steam 覆盖）
+  card.className = "card steam" + (rare ? " rare" : "");
 
   // 图标：Steam CDN 直链，加载失败回落奖杯
   let iconHtml;
@@ -105,6 +102,6 @@ window.aw2?.setIgnore(true);
 if (!window.aw2) console.error("[overlay] preload 桥未加载，无法接收通知");
 
 window.aw2?.onAchievement((p) => {
-  console.warn("[overlay] 收到卡片:", p.displayName, "style=", p.style || "(默认)");
+  console.warn("[overlay] 收到卡片:", p.displayName);
   enqueue({ ...p });
 });

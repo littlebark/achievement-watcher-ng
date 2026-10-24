@@ -266,9 +266,14 @@ async function renderPatchPicker(dir) {
 
       <div class="row">
         <button id="p-apply" class="btn" ${d.isGame ? "" : "disabled"}>开始打补丁</button>
+        ${patch.backup ? `<button id="p-restore" class="btn btn-ghost" title="还原为本工具打补丁前的状态">恢复原样</button>` : ""}
         <span id="p-msg" class="hint"></span>
       </div>
     </div>`;
+
+  if (patch.backup) {
+    $("#p-restore").addEventListener("click", () => restorePatch(d.path));
+  }
 
   $("#p-user").addEventListener("input", (e) => { patchUserDraft = e.target.value; });
   $("#p-pick").addEventListener("click", async () => {
@@ -284,6 +289,31 @@ async function renderPatchPicker(dir) {
     if (e.key === "Enter") renderPatchPicker(e.target.value.trim());
   });
   $("#p-apply").addEventListener("click", () => applyPatch(d.path));
+}
+
+// 恢复原样：回滚本工具对该目录最近一次打补丁
+async function restorePatch(dir) {
+  const msg = $("#p-msg");
+  if (!confirm("确定要恢复原样吗？\n\n会把游戏目录里的文件还原为打补丁前的状态（.aw2bak 备份还原）。")) return;
+  if (msg) msg.textContent = "正在恢复…";
+  try {
+    const r = await api("/api/emu/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir }),
+    });
+    modalBody.innerHTML = `
+      <div class="settings">
+        <h2>↩️ 已恢复原样</h2>
+        <div class="dirlist">${r.restored.map((s) => `<div>${esc(s)}</div>`).join("")}</div>
+        ${r.settingsDirs.length ? `<p class="hint">生成过的成就清单（steam_settings）保留着，不影响游戏运行；重新打补丁时可直接复用。想彻底清理可手动删除游戏目录里的 steam_settings 文件夹。</p>` : ""}
+        <div class="row"><button class="btn" id="p-restore-done">返回</button></div>
+      </div>`;
+    $("#p-restore-done").addEventListener("click", () => renderPatchPicker(dir));
+    toast("已恢复原样");
+  } catch (e) {
+    if (msg) msg.textContent = `恢复失败：${e.message}`; else alert(`恢复失败：${e.message}`);
+  }
 }
 
 let patchUserDraft = "";
@@ -319,10 +349,14 @@ async function applyPatch(dir) {
           ${r.accountName ? `<div>游戏内用户名：<b>${esc(r.accountName)}</b>（下次进游戏生效）</div>` : ""}
           <div>Steam 成就数据：${r.schema === "downloaded" ? "已下载到本地" : r.schema === "cached" ? "已有缓存" : `下载失败（${esc(r.schemaError || "网络问题")}）`}</div>
         </div>
-        <p class="hint">现在可以直接启动游戏。想撤销：把游戏目录里的 <code>steam_api64.dll.aw2bak</code> 改名回 <code>steam_api64.dll</code> 即可（命令行用户也可用 <code>node src\\cli.js emu-restore ${esc(r.appid)}</code>）。</p>
-        <div class="row"><button class="btn" id="p-done">知道了</button></div>
+        <p class="hint">现在可以直接启动游戏。如果游戏因此无法运行，点下面的「恢复原样」一步还原（原文件备份为 <code>.aw2bak</code>）。</p>
+        <div class="row">
+          <button class="btn" id="p-done">知道了</button>
+          <button class="btn btn-ghost" id="p-undo">恢复原样</button>
+        </div>
       </div>`;
     $("#p-done").addEventListener("click", () => { closeModal(); loadLibrary(true); });
+    $("#p-undo").addEventListener("click", () => restorePatch(r.gameDir));
     toast("补丁已应用");
   } catch (e) {
     msg.textContent = `失败：${e.message}`;

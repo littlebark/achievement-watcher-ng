@@ -311,17 +311,9 @@ export async function applyEmu({ appid, gameDir, mode = "regular", source, withI
 }
 
 // 回滚到最近一次安装前的状态
-export async function restoreEmu(appid) {
-  const dir = manifestDir();
-  let files = [];
-  try { files = (await fsp.readdir(dir)).filter((f) => f.endsWith(`-${appid}.json`)); }
-  catch { throw new Error("没有安装记录"); }
-  if (!files.length) throw new Error(`没有 appid=${appid} 的安装记录`);
-
-  files.sort(); // 时间戳前缀，升序
-  const mf = path.join(dir, files[files.length - 1]);
+// 按 manifest 文件执行回滚：还原备份 / 移除写入文件，并把 manifest 标记为已回滚
+async function restoreFromManifest(mf) {
   const m = await readJSON(mf);
-
   const restored = [];
   for (const item of m.applied) {
     if (item.backup && (await exists(item.backup))) {
@@ -336,6 +328,56 @@ export async function restoreEmu(appid) {
   // 记录已回滚，避免重复执行
   await fsp.rename(mf, mf.replace(/\.json$/, ".restored.json"));
   return { manifest: mf, mode: m.mode, restored, settingsDirs: m.settingsDirs };
+}
+
+export async function restoreEmu(appid) {
+  const dir = manifestDir();
+  let files = [];
+  try { files = (await fsp.readdir(dir)).filter((f) => f.endsWith(`-${appid}.json`)); }
+  catch { throw new Error("没有安装记录"); }
+  if (!files.length) throw new Error(`没有 appid=${appid} 的安装记录`);
+
+  files.sort(); // 时间戳前缀，升序
+  return restoreFromManifest(path.join(dir, files[files.length - 1]));
+}
+
+// 按游戏目录回滚：在安装清单里找 gameDir 匹配的最近一次记录（网页"恢复原样"按钮用）
+// 比按 appid 更稳：目录里 steam_appid.txt 被改/丢失时 appid 对不上，目录才是用户选中的事实
+export async function restoreEmuByDir(gameDir) {
+  const dir = manifestDir();
+  let files = [];
+  try { files = (await fsp.readdir(dir)).filter((f) => f.endsWith(".json")); }
+  catch { /* 清单目录都没了，走兜底 */ }
+
+  const root = path.resolve(gameDir);
+  const want = root.toLowerCase();
+  let latest = null;
+  for (const f of files.sort()) { // 升序遍历，取最后命中的 = 最近一次
+    const mf = path.join(dir, f);
+    const m = await readJSON(mf).catch(() => null);
+    if (m?.gameDir && m.applied && path.resolve(m.gameDir).toLowerCase() === want) latest = mf;
+  }
+  if (latest) return restoreFromManifest(latest);
+
+  // 无清单兜底：清单可能随数据目录重建/迁移丢失，但游戏目录里的 .aw2bak 是可靠的事实。
+  // 直接递归扫 *.aw2bak，逐个改回原名（覆盖现文件 = 回到打补丁前状态）。
+  const restored = [];
+  async function sweep(dir) {
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { await sweep(p); continue; }
+      if (!e.name.toLowerCase().endsWith(".aw2bak")) continue;
+      const target = p.replace(/\.aw2bak$/i, "");
+      await fsp.rm(target, { force: true });
+      await fsp.rename(p, target);
+      restored.push(`还原 ${target}`);
+    }
+  }
+  await sweep(root);
+  if (!restored.length) throw new Error("该目录没有本工具的打补丁记录，也没找到 .aw2bak 备份（可能从未打过补丁，或已被还原过）");
+  return { manifest: null, mode: "fallback", restored, settingsDirs: [] };
 }
 
 // ---------- emu-source：安装/更新模拟器源 ----------

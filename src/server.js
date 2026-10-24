@@ -12,7 +12,7 @@ import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
 import { matchAchievements } from "./core/match.js";
 import { detectGameAppid, scanPatchedGames } from "./core/emugen.js";
-import { applyEmu, resolveAccountName } from "./core/emuinstall.js";
+import { applyEmu, resolveAccountName, restoreEmuByDir } from "./core/emuinstall.js";
 import { log } from "./shared/log.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -462,6 +462,23 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular", userName }
   };
 }
 
+// 恢复原样：按游戏目录回滚最近一次打补丁（还原 .aw2bak 备份 / 移除写入的文件）
+async function emuRestoreDir({ dir } = {}) {
+  if (!dir || typeof dir !== "string") throw new Error("请提供游戏目录");
+  const gameDir = path.resolve(dir.trim());
+  const st = await fsp.stat(gameDir).catch(() => null);
+  if (!st?.isDirectory()) throw new Error(`目录不存在：${gameDir}`);
+
+  const r = await restoreEmuByDir(gameDir);
+  libCache = { at: 0, data: null };
+  return {
+    gameDir,
+    restored: r.restored,
+    // 生成过的 steam_settings 成就清单保留（不影响游戏运行，重新打补丁可直接复用）
+    settingsDirs: r.settingsDirs || [],
+  };
+}
+
 // ---------- 目录浏览（给网页选游戏目录用） ----------
 async function listFsDir(rawPath) {
   if (!rawPath) {
@@ -692,6 +709,11 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/emu/apply" && req.method === "POST") {
       const body = await readBody(req);
       return sendJSON(res, 200, await emuApplyDir(body));
+    }
+
+    if (p === "/api/emu/restore" && req.method === "POST") {
+      const body = await readBody(req);
+      return sendJSON(res, 200, await emuRestoreDir(body));
     }
 
     if (p === "/api/settings" && req.method === "POST") {
