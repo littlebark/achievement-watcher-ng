@@ -1,6 +1,6 @@
 {
   "name": "achievement-watcher-ng",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Rewrite of xan105/Achievement-Watcher: achievement file parser with live notification",
   "type": "module",
   "engines": {
