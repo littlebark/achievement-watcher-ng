@@ -161,7 +161,6 @@ function createTray() {
   tray.on("click", openPanel);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "打开面板", click: () => openPanel() },
-    { label: "在浏览器打开面板", click: () => openPanel(true) },
     { type: "separator" },
     {
       label: "开机自启",
