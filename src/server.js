@@ -334,47 +334,68 @@ async function prefetchAllAchievements(force = false) {
   }
 }
 
-// 检测游戏目录是否已被打过补丁（轻量：只看当前目录的文件，不递归）
-function detectPatchState(dir, entries) {
-  const has = (name) => entries.some((e) => e.isFile() && e.name.toLowerCase() === name.toLowerCase());
-  const hasDir = (name) => entries.some((e) => e.isDirectory() && e.name.toLowerCase() === name.toLowerCase());
-  const dllName = ["steam_api64.dll", "steam_api.dll"].find(has) || null;
+// 检测游戏目录补丁状态：递归找 steam_api*.dll 与各模拟器特征文件
+// （Unity 等引擎的 DLL 在 <Game>_Data\Plugins\ 子目录，必须递归才认得出来）
+// 深度上限设得很宽（防意外套娃），真正兜底靠时间预算：超时即停，只扫已到的部分
+const PATCH_OTHER_EMU = [
+  { group: "RUNE", files: ["steam_emu.ini", "rune.ini"] },
+  { group: "CODEX", files: ["codex.ini"] },
+  { group: "3DM", files: ["3dmgame.ini"] },
+  { group: "SmartSteamEmu", files: ["smartsteamemu.ini"] },
+];
+const PATCH_SKIP_DIR = /^(_CommonRedist|__redist|redist|\$RECYCLE\.BIN|System Volume Information|Engine|Extras|\.git|\.svn|node_modules)$/i;
 
-  let goldbergDll = false;
-  if (dllName) {
-    try {
-      const buf = fs.readFileSync(path.join(dir, dllName));
-      const ascii = buf.toString("latin1");
-      goldbergDll = /goldberg|gbe_fork|steam_settings|steam_settings_path/i.test(ascii);
-    } catch { /* 读不到就当未知 */ }
+async function detectPatchState(root, { maxDepth = 12, budgetMs = 2000 } = {}) {
+  const res = {
+    dll: null, dllDir: null, goldbergDll: false, settingsDir: false,
+    achConfig: false, backup: false, otherEmu: [], state: "nodll",
+    budgetHit: false,
+  };
+  const t0 = Date.now();
+  let dllRead = false;
+
+  async function walk(dir, depth) {
+    if (Date.now() - t0 > budgetMs) { res.budgetHit = true; return; }
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+
+    for (const e of entries) {
+      const n = e.name.toLowerCase();
+      if (e.isFile()) {
+        if (!res.dll && /^steam_api(64)?\.dll$/.test(n)) { res.dll = e.name; res.dllDir = dir; }
+        if (/^steam_api(64)?\.dll\.aw2bak$/.test(n)) res.backup = true;
+        for (const k of PATCH_OTHER_EMU) {
+          if (k.files.includes(n) && !res.otherEmu.includes(k.group)) res.otherEmu.push(k.group);
+        }
+      } else if (e.isDirectory() && n === "steam_settings" && !res.settingsDir) {
+        res.settingsDir = true; // steam_settings 目录是 Goldberg 系补丁的标志产物
+        try { await fsp.access(path.join(dir, "steam_settings", "achievements.json")); res.achConfig = true; } catch { /* 没生成过清单 */ }
+      }
+    }
+
+    if (res.dll && !dllRead) {
+      dllRead = true;
+      try {
+        const ascii = (await fsp.readFile(path.join(res.dllDir, res.dll))).toString("latin1");
+        res.goldbergDll = /goldberg|gbe_fork|steam_settings|steam_settings_path/i.test(ascii);
+      } catch { /* 读不到就当未知 */ }
+    }
+
+    if (depth <= 0) return;
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const n = e.name.toLowerCase();
+      if (n === "steam_settings" || PATCH_SKIP_DIR.test(n) || n.startsWith(".")) continue;
+      await walk(path.join(dir, e.name), depth - 1);
+    }
   }
 
-  // 其他破解组/模拟器的特征文件（各下载站打包风格不一，认常见几种）
-  const OTHER_EMU = [
-    { group: "RUNE", files: ["steam_emu.ini", "RUNE.ini"] },
-    { group: "CODEX", files: ["codex.ini"] },
-    { group: "3DM", files: ["3DMGAME.ini"] },
-    { group: "SmartSteamEmu", files: ["SmartSteamEmu.ini"] },
-  ];
-  const otherEmu = OTHER_EMU.filter((k) => k.files.some(has)).map((k) => k.group);
-  const settingsDir = hasDir("steam_settings");
-
-  // 状态归类：goldberg=已打 Goldberg 系补丁；other=被其他模拟器接管；vanilla=原版 Steam DLL；nodll=目录里没有 DLL
-  let state = "nodll";
-  if (goldbergDll || settingsDir) state = "goldberg";
-  else if (otherEmu.length) state = "other";
-  else if (dllName) state = "vanilla";
-
-  return {
-    dll: dllName,
-    goldbergDll,                                        // DLL 本身像 Goldberg/gbe_fork 系
-    settingsDir,                                        // 有 steam_settings 目录（Goldberg 系补丁产物）
-    // 成就清单是嵌套路径，entries 只有顶层项，必须直接探文件
-    achConfig: fs.existsSync(path.join(dir, "steam_settings", "achievements.json")),
-    backup: ["steam_api64.dll.aw2bak", "steam_api.dll.aw2bak"].some(has), // aw2 打过补丁（有备份）
-    otherEmu,                                           // 检测到的其他模拟器名
-    state,
-  };
+  await walk(root, maxDepth);
+  res.state = res.goldbergDll || res.settingsDir ? "goldberg"
+    : res.otherEmu.length ? "other"
+    : res.dll ? "vanilla"
+    : "nodll";
+  return res;
 }
 
 // ---------- 模拟器补丁（网页端选目录 → 生成成就配置 → 替换 DLL 并备份） ----------
@@ -390,7 +411,7 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular", userName }
   }
 
   const cfg = await loadConfig();
-  const preState = detectPatchState(gameDir, await fsp.readdir(gameDir, { withFileTypes: true }));
+  const preState = await detectPatchState(gameDir);
   const accountName = await resolveAccountName(userName); // 输入 > 全局 GSE 配置 > Windows 用户名
 
   const r = await applyEmu({
@@ -450,15 +471,9 @@ async function listFsDir(rawPath) {
     .map((e) => ({ name: e.name, path: path.join(full, e.name) }))
     .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 
-  // 轻量判断当前目录是不是游戏根（不做递归，避免浏览大目录变慢）
-  let appid = null;
-  for (const rel of ["steam_appid.txt", path.join("steam_settings", "steam_appid.txt")]) {
-    try {
-      const txt = (await fsp.readFile(path.join(full, rel), "utf8")).trim();
-      if (/^\d+$/.test(txt)) { appid = txt; break; }
-    } catch { /* next */ }
-  }
-  const patch = detectPatchState(full, entries);
+  // 识别游戏：AppID 递归向下找（steam_appid.txt 可能藏在子目录），补丁状态也递归检测
+  const patch = await detectPatchState(full);
+  const appid = await detectGameAppid(full);
 
   const parent = path.dirname(full);
   const cfg = await loadConfig();

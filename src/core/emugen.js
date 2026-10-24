@@ -48,12 +48,12 @@ export async function detectGameAppid(gameDir) {
   if (direct) return direct;
 
   async function walk(dir, depth) {
-    if (depth <= 0) return null;
+    // 先读本层条目再判断深度：否则最深一层目录里的 steam_appid.txt 永远看不到（off-by-one）
     let entries;
     try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return null; }
     for (const e of entries) {
       if (e.isDirectory()) {
-        if (e.name.startsWith(".") || /^\$/.test(e.name)) continue;
+        if (e.name.startsWith(".") || /^\$/.test(e.name) || depth <= 0) continue;
         const hit = await walk(path.join(dir, e.name), depth - 1);
         if (hit) return hit;
         continue;

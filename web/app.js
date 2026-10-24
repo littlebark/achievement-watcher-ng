@@ -229,12 +229,12 @@ async function renderPatchPicker(dir) {
     status = `✅ <b>已经是 Goldberg 系模拟器</b>，可直接启动游戏，无需再打补丁。<br>${idLine}；${extra.join("，")}。` +
       `<br><span style="color:#9aa0a6">仍可点「开始打补丁」刷新成就清单/图标、换游戏内用户名；原 DLL 备份会保留。</span>`;
   } else if (patch.state === "other") {
-    status = `⚠️ <b>检测到其他模拟器补丁：${esc(patch.otherEmu.join(" / "))}</b>。${idLine}。<br>` +
-      `继续打补丁会把它换成 Goldberg（原 DLL 自动备份为 .aw2bak，可回滚）；注意换模拟器后<b>原解放记录可能读不到</b>（各模拟器存档位置不同）。`;
+    status = `✅ <b>已被 ${esc(patch.otherEmu.join(" / "))} 模拟器接管</b>，它的成就监视我们同样支持——直接启动游戏就能监测解锁，<b>无需打补丁</b>。<br>${idLine}。` +
+      `<br><span style="color:#9aa0a6">只有想把模拟器统一换成 Goldberg 时才需要继续：原 DLL 会自动备份为 .aw2bak，可回滚；注意换模拟器后原解锁记录可能读不到（各模拟器存档位置不同）。</span>`;
   } else if (patch.state === "vanilla") {
     status = `❌ <b>未打补丁</b>（原版 Steam DLL）。${idLine}。<br>可以打补丁：替换为 Goldberg 模拟器并生成成就清单。`;
   } else {
-    status = `⚠️ 这个目录里没有 steam_api64.dll / steam_api.dll，可能不是游戏根目录。<br>${idLine}`;
+    status = `⚠️ 没有找到 steam_api64.dll / steam_api.dll${patch.budgetHit ? "（目录较大，扫描超时提前停止）" : ""}，可能选的不是游戏安装目录。<br>${idLine}`;
   }
 
   modalBody.innerHTML = `
@@ -259,7 +259,7 @@ async function renderPatchPicker(dir) {
       </div>
 
       <div class="row">
-        <button id="p-apply" class="btn" ${d.isGame && d.appid ? "" : "disabled"}>开始打补丁</button>
+        <button id="p-apply" class="btn" ${d.isGame ? "" : "disabled"}>开始打补丁</button>
         <span id="p-msg" class="hint"></span>
       </div>
     </div>`;
