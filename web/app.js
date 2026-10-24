@@ -236,9 +236,10 @@ async function renderPatchPicker(dir) {
       <div class="field">
         <label>当前目录</label>
         <div class="path-row">
-          <input id="p-dir" type="text" value="${esc(d.path)}" placeholder="选一个盘符开始">
-          <button id="p-go" class="btn btn-ghost">打开</button>
-          ${d.parent !== null ? `<button id="p-up" class="btn btn-ghost">↑ 上一级</button>` : ""}
+          <input id="p-dir" type="text" value="${esc(d.path)}" placeholder="粘贴路径，或点右侧选择文件夹">
+          <button id="p-pick" class="btn btn-ghost" title="弹出系统文件夹选择框">选择文件夹…</button>
+          <button id="p-go" class="btn btn-ghost" title="进入该目录，列出子目录">前往</button>
+          ${d.parent !== null ? `<button id="p-up" class="btn btn-ghost" title="返回上一级">↑ 上一级</button>` : ""}
         </div>
         <div class="hint">${status}</div>
       </div>
@@ -267,6 +268,14 @@ async function renderPatchPicker(dir) {
   );
   $("#p-user").addEventListener("input", (e) => { patchUserDraft = e.target.value; });
   $("#p-go").addEventListener("click", () => renderPatchPicker($("#p-dir").value.trim()));
+  $("#p-pick").addEventListener("click", async () => {
+    if (!window.aw2Panel?.pickFolder) {
+      alert("浏览器模式不支持系统选择框，请直接在输入框粘贴文件夹路径（用桌面版 exe 会有选择按钮）");
+      return;
+    }
+    const picked = await window.aw2Panel.pickFolder($("#p-dir").value.trim());
+    if (picked) renderPatchPicker(picked);
+  });
   if ($("#p-up")) $("#p-up").addEventListener("click", () => renderPatchPicker(d.parent));
   $("#p-apply").addEventListener("click", () => applyPatch(d.path));
 }

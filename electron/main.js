@@ -1,6 +1,6 @@
 // aw2 桌面版主进程：内置 watchdog + 自绘成就弹窗（overlay）
 // 架构：主进程跑原有 watchdog（纯 Node 代码原样复用）→ WS 广播 → 本窗口渲染 Xbox 风格卡片
-import { app, BrowserWindow, ipcMain, shell, screen, Tray, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, shell, screen, Tray, Menu, dialog } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -140,7 +140,10 @@ function openPanel(browser = false) {
     autoHideMenuBar: true,
     backgroundColor: "#14161a",
     icon: path.join(__dirname, "tray.png"),
-    webPreferences: { contextIsolation: true },
+    webPreferences: {
+      contextIsolation: true,
+      preload: path.join(__dirname, "panel-preload.js"), // 原生目录选择框
+    },
   });
   panelWin.loadURL(url);
   panelWin.on("closed", () => { panelWin = null; });
@@ -186,6 +189,15 @@ app.whenReady().then(async () => {
     win?.setIgnoreMouseEvents(!!ignore, { forward: true });
   });
   ipcMain.handle("aw2:openPanel", () => openPanel());
+  // 原生目录选择（面板里"选择文件夹…"用）
+  ipcMain.handle("aw2:pick-folder", async (_e, current) => {
+    const r = await dialog.showOpenDialog(panelWin ?? undefined, {
+      title: "选择游戏根目录（能看到 exe 或 steam_api64.dll 的那一层）",
+      properties: ["openDirectory"],
+      defaultPath: current || undefined,
+    });
+    return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+  });
 
   await startWatchdog(); // 现有 watchdog 原样运行（含单实例锁、目录监视、60s 重扫）
   setLogFile(path.join(dataRoot(), "logs", "aw2-desktop.log")); // startWatchdog 内部把日志切到了 watchdog.log，切回桌面版自己的

@@ -29,6 +29,7 @@
       "package.json",
       "electron/main.js",
       "electron/preload.js",
+      "electron/panel-preload.js",
       "electron/overlay.html",
       "electron/overlay.js",
       "electron/tray.png",
