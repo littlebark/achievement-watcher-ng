@@ -162,7 +162,7 @@ async function cmdEmuSource(input) {
   const { installEmuSource, showEmuSourceInfo } = await import("./core/emuinstall.js");
   if (!input) {
     const cur = await showEmuSourceInfo();
-    if (!cur) return console.log("尚未安装 emu 源。用法: node src\\cli.js emu-source <gbe_fork的7z或解压目录>");
+    if (!cur) return console.log("尚未安装 emu 源（内置 vendor 包会在打补丁时自动启用）。也可手动安装: node src\\cli.js emu-source <gbe_fork的7z或解压目录>");
     console.log(`当前 emu 源: ${cur.root}`);
     if (cur.version) {
       console.log(`  安装时间: ${cur.version.installedAt}`);

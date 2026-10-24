@@ -49,6 +49,8 @@ node src\cli.js emu-gen 1593500 "F:\Games\GodOfWar"
 node src\cli.js emu-source "D:\GameTools\gbe_fork-emu-win-release.7z"
 ::   默认装到 <数据目录>\tools\steam-emu；想装到别处（如移动硬盘）用
 ::   node src\cli.js path set emuRoots <目录> 再重跑本命令；emu-apply 也可 --source 临时指定
+::   不装也能用：项目 vendor\steam-emu\ 内置了一份 gbe_fork（LGPL-3.0，见 vendor\steam-emu\README.md），
+::   首次打补丁时自动解压 regular 版 DLL 到 <数据目录>\tools\steam-emu；想升级版本时再手动 emu-source
 
 :: 一键给游戏装模拟器（备份原 DLL 为 .aw2bak，自动生成成就配置，可回滚）
 node src\cli.js emu-apply <appid> [游戏目录] [--steamclient] [--dry-run] [--no-icons]

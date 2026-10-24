@@ -12,7 +12,8 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists, writeJSON, readJSON } from "../shared/fsx.js";
-import { dataRoot } from "./schema.js";
+import { log } from "../shared/log.js";
+import { dataRoot, projectRoot } from "./schema.js";
 import { loadConfig, resolvedPaths } from "./config.js";
 import { generateEmuConfig } from "./emugen.js";
 
@@ -30,20 +31,98 @@ function manifestDir() {
 }
 
 // 找到可用的 emu 源目录（含 steam_api64.dll）
+// 优先级：--source 显式指定 → 用户配置 emuRoots → emuExtraSources → 内置 vendor 包自动展开
 export async function resolveEmuSource(explicit) {
   const cfg = await loadConfig();
   const paths = resolvedPaths(cfg);
-  const candidates = [explicit, ...paths.emuRoots, ...paths.emuExtraSources];
-  for (const c of candidates) {
-    if (!c) continue;
-    if (await exists(path.join(c, "steam_api64.dll"))) return path.resolve(c);
+  const pick = async (candidates) => {
+    for (const c of candidates) {
+      if (!c) continue;
+      if (await exists(path.join(c, "steam_api64.dll"))) return path.resolve(c);
+    }
+    return null;
+  };
+
+  const vendorDir = path.join(projectRoot, "vendor", "steam-emu");
+  let src = await pick([explicit, ...paths.emuRoots, ...paths.emuExtraSources, vendorDir]);
+  if (!src) src = await expandVendoredEmu(); // 开箱兜底：解压项目内置的 gbe_fork 包
+  if (!src) {
+    throw new Error(
+      "未找到 Goldberg 模拟器源（vendor 目录缺少内置包）。请运行:\n  node src\\cli.js emu-source <gbe_fork的7z或解压目录>\n安装到 " +
+        paths.emuRoots.join(" 或 ") +
+        "\n或用 --source <目录> 指定（该目录需含 steam_api64.dll）\n" +
+        "（可用 `node src\\cli.js path set emuRoots <目录...>` 自定义搜索位置）"
+    );
   }
-  throw new Error(
-    "未找到 Goldberg 模拟器源。请运行:\n  node src\\cli.js emu-source <gbe_fork的7z或解压目录>\n安装到 " +
-      paths.emuRoots.join(" 或 ") +
-      "\n或用 --source <目录> 指定（该目录需含 steam_api64.dll）\n" +
-      "（可用 `node src\\cli.js path set emuRoots <目录...>` 自定义搜索位置）"
-  );
+  return src;
+}
+
+// 项目内置 emu 源（vendor/steam-emu/*.7z）：首次使用时用系统 tar 只解出 regular 版
+// steam_api64.dll / steam_api.dll 到 <数据目录>/tools/steam-emu，之后走正常候选流程
+async function expandVendoredEmu() {
+  const vendorDir = path.join(projectRoot, "vendor", "steam-emu");
+  let entries = [];
+  try { entries = await fsp.readdir(vendorDir); } catch { return null; }
+  const pkg = entries.find((f) => /\.7z$/i.test(f));
+  if (!pkg) return null;
+  const pkgPath = path.join(vendorDir, pkg);
+  if (!(await exists(path.join(dataRoot(), "tools", "steam-emu", "steam_api64.dll")))) {
+    log.info("[EMU] 首次使用内置 gbe_fork 源，解压 regular DLL ...");
+    const tar = path.join(process.env.SystemRoot || "C://Windows", "System32", "tar.exe");
+    // 1) 列出包内文件，找到新结构里的 regular DLL（带可能的顶层目录前缀）
+    const { stdout } = await run(tar, ["-tf", pkgPath], { windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+    const lines = stdout.split(/\r?\n/).filter(Boolean);
+    const want = [
+      { rel: "steam_api64.dll", re: /(^|\/)regular\/x64\/steam_api64\.dll$/i },
+      { rel: "steam_api.dll", re: /(^|\/)regular\/x86\/steam_api\.dll$/i },
+    ];
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "aw2-vendor-"));
+    try {
+      for (const w of want) {
+        const hit = lines.find((l) => w.re.test(l.trim()));
+        if (!hit) continue;
+        await run(tar, ["-xf", pkgPath, "-C", tmpDir, hit.trim()], { windowsHide: true });
+      }
+      // 2) 归位到 <数据目录>/tools/steam-emu
+      const dst = path.join(dataRoot(), "tools", "steam-emu");
+      await fsp.mkdir(dst, { recursive: true });
+      const copied = [];
+      for (const w of want) {
+        const extracted = await findFile(tmpDir, w.rel);
+        if (!extracted) continue;
+        await fsp.copyFile(extracted, path.join(dst, w.rel));
+        copied.push(w.rel);
+      }
+      if (!copied.includes("steam_api64.dll")) throw new Error("内置包里没找到 regular/x64/steam_api64.dll");
+      await writeJSON(path.join(dst, "VERSION.json"), {
+        installedAt: new Date().toISOString(),
+        from: `vendor/${pkg}（aw2 内置，仅展开 regular DLL）`,
+        upstream: "github.com/Detanup01/gbe_fork",
+        package: { name: pkg, vendor: true },
+      });
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  return path.join(dataRoot(), "tools", "steam-emu");
+}
+
+// 在临时解压目录里按文件名递归找（包内可能有一层顶层目录前缀）
+async function findFile(root, name, depth = 4) {
+  let entries;
+  try { entries = await fsp.readdir(root, { withFileTypes: true }); } catch { return null; }
+  for (const e of entries) {
+    const full = path.join(root, e.name);
+    if (e.isFile() && e.name === name) return full;
+  }
+  if (depth <= 0) return null;
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const hit = await findFile(path.join(root, e.name), name, depth - 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
 // 递归找所有含 steam_api*.dll 的目录（限深 4）
@@ -130,6 +209,12 @@ export async function applyEmu({ appid, gameDir, mode = "regular", source, withI
   }
 
   // 校验源文件
+  if (!plan.length) {
+    if (mode === "steamclient") {
+      throw new Error("steamclient 模式需要 emu 源里有 experimental_steamclient/ 变体（内置精简源只含 regular 版）。请先 `node src\\cli.js emu-source <完整包>` 安装完整源再试。");
+    }
+    throw new Error("没有可应用的补丁项（游戏目录里没找到 steam_api*.dll）");
+  }
   for (const item of plan) {
     if (item.kind === "dll" && !(await exists(item.source))) {
       throw new Error(`模拟器源文件缺失: ${item.source}`);
