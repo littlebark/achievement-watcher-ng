@@ -95,7 +95,10 @@ function renderGrid() {
         <div class="card-title" title="${esc(g.name)}">${esc(g.name)}</div>
         <div class="bar ${done ? "done" : ""}"><i style="width:${g.percent}%"></i></div>
         <div class="card-meta">
-          <span>${g.error ? `<span class="tag err" title="${esc(g.error)}">数据异常</span>` : `<b>${g.unlocked}</b> / ${g.total}${g.offline ? ` <span class="tag warn" title="${esc(g.offlineReason || "未取到 Steam 成就数据，仅显示本地存档")}">离线</span>` : ""}`}</span>
+          <span>${g.error ? (/NO_STEAM_API_KEY/i.test(g.error)
+            ? `<span class="tag warn" title="${esc(g.error)}（填好 Key 保存后自动恢复）">缺 API Key</span>`
+            : `<span class="tag err" title="${esc(g.error)}">数据异常</span>`)
+            : `<b>${g.unlocked}</b> / ${g.total}${g.offline ? ` <span class="tag warn" title="${esc(g.offlineReason || "未取到 Steam 成就数据，仅显示本地存档")}">离线</span>` : ""}`}</span>
           <span>${g.noSave ? `<span class="tag">无存档</span> ` : ""}<b>${g.percent}%</b></span>
         </div>
       </div>`;
@@ -422,6 +425,11 @@ async function openSettings() {
             <label>成就墙导出目录（留空 = 默认 数据目录\AchievementWall，随项目文件夹走）</label>
             <input id="s-wall" type="text" value="${esc(s.wall?.dir || "")}" placeholder="留空 = 默认 数据目录\AchievementWall">
             <div class="hint">默认导出到 <code>${esc(s.wall?.effective || "数据目录\\AchievementWall")}</code>；整个项目文件夹删掉即全部清空，不留垃圾。</div>
+            <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+              <button class="btn" id="s-wallexport">立即导出全部成就墙</button>
+              <span id="s-wallexport-out" class="hint"></span>
+            </div>
+            <div class="hint">按钮使用已保存的目录（改了目录要先点保存设置）。正常使用无需手动导出：解锁时自动实时同步。</div>
           </div>
         </div>
 
@@ -450,10 +458,20 @@ async function openSettings() {
           <button class="btn-primary" id="s-save">保存设置</button>
           <button class="btn" id="s-cancel">取消</button>
         </div>
-        <div class="hint" style="margin-top:12px">通知相关设置需要重启 watchdog 才生效；成就语言变更后刷新即可看到新语言。</div>
+        <div class="hint" style="margin-top:12px">保存后约 1 分钟内自动生效，无需重启（Key、音效、成就墙、通知模式等都是）；仅「WS 广播端口」「面板端口」需要重启程序。成就语言变更后刷新页面即可看到新语言。</div>
       </div>`;
 
     $("#s-cancel").addEventListener("click", closeModal);
+    $("#s-wallexport").addEventListener("click", async () => {
+      const out = $("#s-wallexport-out");
+      out.textContent = "导出中…（要把所有游戏的成就图标写进墙目录，可能要一小会）";
+      try {
+        const r = await api("/api/wall/export", { method: "POST" });
+        out.textContent = `✅ 已导出 ${r.games} 个游戏${r.errors ? `，${r.errors} 个失败` : ""} → ${r.dir}`;
+      } catch (e) {
+        out.textContent = `❌ ${e.message}`;
+      }
+    });
     $("#s-addgame").addEventListener("click", async () => {
       const out = $("#s-addresult");
       const id = ($("#s-addappid").value || "").trim();

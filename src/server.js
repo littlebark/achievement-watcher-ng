@@ -611,6 +611,16 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, await getSettings());
     }
 
+    // 立即全量导出成就墙（面板「立即导出全部成就墙」按钮用）
+    if (p === "/api/wall/export" && req.method === "POST") {
+      const cfg = await loadConfig();
+      const dir = resolveWallDir(cfg);
+      if (!dir) return sendJSON(res, 400, { error: "成就墙已关闭：请在设置里勾选「启用成就墙」并保存" });
+      const { exportWall } = await import("./core/wall.js");
+      const r = await exportWall({ cfg, wallDir: dir });
+      return sendJSON(res, 200, { ok: true, dir: r.wallDir, games: r.games.length, errors: r.errors?.length || 0 });
+    }
+
     if (p === "/api/schema/prefetch" && req.method === "POST") {
       const body = await readBody(req).catch(() => ({}));
       // 支持只下指定 appid（详情页单个游戏补齐）

@@ -119,10 +119,31 @@ function connectBroadcast() {
 }
 
 let tray = null;
+let panelWin = null; // 面板窗口：程序自带窗口，观感与原版一致（不再丢给系统浏览器）
 let uiPort = 5179;
 
-function openPanel() {
-  return shell.openExternal(`http://127.0.0.1:${uiPort}`);
+// browser=true 强制用系统浏览器打开（托盘菜单里的备用入口）
+function openPanel(browser = false) {
+  const url = `http://127.0.0.1:${uiPort}`;
+  if (browser) return shell.openExternal(url);
+  if (panelWin && !panelWin.isDestroyed()) {
+    panelWin.show();
+    panelWin.focus();
+    return;
+  }
+  panelWin = new BrowserWindow({
+    width: 1180,
+    height: 820,
+    minWidth: 900,
+    minHeight: 600,
+    title: "成就查看工具",
+    autoHideMenuBar: true,
+    backgroundColor: "#14161a",
+    icon: path.join(__dirname, "tray.png"),
+    webPreferences: { contextIsolation: true },
+  });
+  panelWin.loadURL(url);
+  panelWin.on("closed", () => { panelWin = null; });
 }
 
 // 托盘图标：左键打开面板，右键菜单含开机自启开关与退出（这是桌面版唯一的可见入口）
@@ -139,7 +160,8 @@ function createTray() {
   tray.setToolTip("成就查看工具（点击打开面板）");
   tray.on("click", openPanel);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "打开面板", click: openPanel },
+    { label: "打开面板", click: () => openPanel() },
+    { label: "在浏览器打开面板", click: () => openPanel(true) },
     { type: "separator" },
     {
       label: "开机自启",
