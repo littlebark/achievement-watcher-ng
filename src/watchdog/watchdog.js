@@ -233,19 +233,35 @@ export async function startWatchdog() {
 
   // 挂监视。目录 key 用小写绝对路径去重（Windows 不区分大小写），重复调用不会重复挂。
   const watchers = new Map(); // key -> { watcher, folder }
+  const lastMtime = new Map(); // 文件绝对路径(小写) -> 上次处理过的 mtime，用于去重
+  const queues = new Map(); // 文件绝对路径(小写) -> Promise，保证同一文件的处理串行
   function attachWatcher(folder) {
     const key = path.resolve(folder.dir).toLowerCase();
     if (watchers.has(key)) return false;
     try {
       const watcher = fs.watch(folder.dir, { recursive: true }, async (eventType, filename) => {
-        if (eventType !== "change" || !filename) return;
+        if (!filename) return;
+        // Windows 上文件被「写临时文件再改名」替换时报的是 rename，不能只认 change
+        if (eventType !== "change" && eventType !== "rename") return;
         const base = path.basename(filename);
         if (!folder.files.includes(base)) return;
         const full = path.join(folder.dir, filename);
-        // 只有 1 秒内修改的文件才算"刚写入"（防止扫描历史存档）
-        if ((await mtimeMs(full)) === 0 || Date.now() - (await mtimeMs(full)) > 1000) return;
-        try { await handleFileChange(folder, full, cfg); }
-        catch (e) { log.warn(`[WATCH] ${e.message}`); }
+
+        // 用 mtime 去重（同一版本只处理一次），替代原来「必须 1 秒内修改」的墙钟判断：
+        // 后者会把事件延迟投递、写盘稍慢的游戏更新直接丢掉，导致解锁不通知。
+        const mt = await mtimeMs(full);
+        if (mt === 0) return; // 文件被删除或还没落盘
+        const fileKey = path.resolve(full).toLowerCase();
+        if (lastMtime.get(fileKey) === mt) return;
+        lastMtime.set(fileKey, mt);
+
+        // 串行化：同一文件的多次事件排队执行，避免两次处理都判定为「新解锁」而重复弹窗
+        const prev = queues.get(fileKey) || Promise.resolve();
+        const next = prev
+          .then(() => handleFileChange(folder, full, cfg))
+          .catch((e) => log.warn(`[WATCH] ${e.message}`))
+          .finally(() => { if (queues.get(fileKey) === next) queues.delete(fileKey); });
+        queues.set(fileKey, next);
       });
       watcher.on("error", (e) => log.warn(`[WATCH] ${folder.dir}: ${e.message}`));
       watchers.set(key, { watcher, folder });
