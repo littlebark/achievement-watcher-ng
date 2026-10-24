@@ -6,6 +6,16 @@ rem   build-portable.bat fast   -> no compression (store, fastest, for local tes
 rem China mirrors avoid github.com timeouts
 cd /d "%~dp0"
 
+rem Guard: electron-builder must delete dist\win-unpacked, which fails if the app is running from it
+tasklist /FI "IMAGENAME eq Achievement Watcher NG.exe" 2>nul | find /I "Achievement Watcher NG.exe" >nul
+if not errorlevel 1 (
+  echo [WARN] The app is still running from dist\win-unpacked.
+  echo        Please exit it first: tray icon -^> right click -^> Quit
+  echo.
+  pause
+  exit /b 1
+)
+
 set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 set ELECTRON_CUSTOM_DIR={{ version }}
 set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
