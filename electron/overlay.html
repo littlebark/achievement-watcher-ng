@@ -107,6 +107,72 @@
       color: rgba(255,255,255,0.25);
       margin-top: 4px;
     }
+
+    /* ===== 样式变体（A/B 预览用；正式启用后选一套作为默认） ===== */
+
+    /* 2. glass：毛玻璃 + 渐变 + 柔光投影 */
+    .card.glass {
+      background: linear-gradient(135deg, rgba(48, 54, 66, 0.72), rgba(22, 24, 30, 0.86));
+      backdrop-filter: blur(18px) saturate(150%);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+    }
+    .card.glass::before { width: 3px; border-radius: 3px; margin: 10px 0; }
+
+    /* 3. light：浅色卡片（浅色桌面更协调） */
+    .card.light {
+      background: #ffffff;
+      color: #16181d;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+      border-radius: 12px;
+    }
+    .card.light .game { color: #0b7a2f; }
+    .card.light .desc { color: #5f6368; }
+    .card.light .icon { background: #eef0f3; }
+    .card.light.rare { border-color: rgba(184, 134, 11, 0.45); }
+    .card.light.rare .game { color: #a97a09; }
+    .card.light .badge { color: #8a6408; background: rgba(232, 195, 82, 0.18); border-color: rgba(184, 134, 11, 0.35); }
+    .card.light .progress { background: #e6e8eb; }
+
+    /* 4. steam：Steam 蓝调横幅，图标更大、标题更重 */
+    .card.steam {
+      background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%);
+      border: 1px solid rgba(102, 192, 244, 0.28);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+      border-radius: 4px;
+      padding: 16px 18px;
+    }
+    .card.steam::before {
+      width: 4px;
+      background: linear-gradient(180deg, #66c0f4, #2a6f97);
+    }
+    .card.steam .icon { width: 64px; height: 64px; border-radius: 4px; }
+    .card.steam .game { color: #66c0f4; font-size: 11px; }
+    .card.steam .title { font-size: 17px; margin: 3px 0 4px; }
+    .card.steam .desc { color: #b8c6d4; }
+    .card.steam .progress > div { background: #66c0f4; }
+    .card.steam.rare { border-color: rgba(232, 195, 82, 0.45); }
+    .card.steam.rare .game { color: #e8c352; }
+
+    /* 5. minimal：极简单行条，不显示描述 */
+    .card.minimal {
+      padding: 11px 14px;
+      border-radius: 999px;
+      background: rgba(18, 20, 24, 0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+      align-items: center;
+      gap: 10px;
+    }
+    .card.minimal::before { width: 3px; border-radius: 3px; margin: 8px 0; }
+    .card.minimal .icon { width: 30px; height: 30px; border-radius: 6px; font-size: 16px; }
+    .card.minimal .title { font-size: 13px; margin: 0; }
+    .card.minimal .game { font-size: 10px; }
+    .card.minimal .desc, .card.minimal .badge, .card.minimal .progress { display: none; }
+    .card.minimal.rare { border-color: rgba(232, 195, 82, 0.4); }
   </style>
 </head>
 <body>

@@ -118,6 +118,24 @@ function connectBroadcast() {
   attempt();
 }
 
+// 样式预览：连发 5 张不同样式的测试卡片，按顺序队列自动逐个播放（每张 5 秒）
+function previewStyles() {
+  if (!win || win.isDestroyed()) return;
+  const base = {
+    appID: 480,
+    game: "样式预览 · 成就查看工具",
+    description: "这一条用来对比不同通知样式，卡片会在几秒后自动收起。",
+  };
+  const variants = [
+    { style: "", displayName: "① 经典深色（当前默认）" },
+    { style: "glass", displayName: "② 毛玻璃" },
+    { style: "light", displayName: "③ 浅色卡片" },
+    { style: "steam", displayName: "④ Steam 蓝调" },
+    { style: "minimal", displayName: "⑤ 极简单行" },
+  ];
+  for (const v of variants) win.webContents.send("aw2:achievement", { ...base, ...v });
+}
+
 let tray = null;
 let panelWin = null; // 面板窗口：程序自带窗口，观感与原版一致（不再丢给系统浏览器）
 let uiPort = 5179;
@@ -164,6 +182,7 @@ function createTray() {
   tray.on("click", openPanel);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "打开面板", click: () => openPanel() },
+    { label: "预览通知样式（5 种）", click: () => previewStyles() },
     { type: "separator" },
     {
       label: "开机自启",

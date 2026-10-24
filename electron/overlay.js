@@ -41,7 +41,9 @@ function pump() {
 function addCard(p) {
   const rare = !!p.rare;
   const card = document.createElement("div");
-  card.className = "card" + (rare ? " rare" : "");
+  // style 仅用于样式预览（classic/glass/light/steam/minimal），正常通知不带该字段
+  const styleClass = ["glass", "light", "steam", "minimal"].includes(p.style) ? " " + p.style : "";
+  card.className = "card" + styleClass + (rare ? " rare" : "");
 
   // 图标：Steam CDN 直链，加载失败回落奖杯
   let iconHtml;
