@@ -1,5 +1,5 @@
 // Toast 通知（PowerShell + WinRT 自实现，替代 powertoast/powerballoon）
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import path from "node:path";
 import { exists } from "../../shared/fsx.js";
 import { log } from "../../shared/log.js";
@@ -11,6 +11,32 @@ function xmlEscape(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// 用独立隐藏 PowerShell 播放音频，播完自行退出。
+// 关键点1：-EncodedCommand（UTF-16LE base64）彻底绕开中文/空格/引号路径的转义问题。
+// 关键点2：不要用 detached:true —— Windows 上它会让 PowerShell 静默秒退（DETACHED_PROCESS 下啥也不干）。
+//          用 windowsHide 即可；父进程退出不影响已启动的子进程继续播放。
+function playAudioDetached(filePath) {
+  const uri = "file:///" + path.resolve(filePath).replace(/\\/g, "/").replace(/'/g, "%27");
+  const script = `Add-Type -AssemblyName presentationCore
+$p = New-Object System.Windows.Media.MediaPlayer
+$p.Open([Uri]'${uri}')
+Start-Sleep -Milliseconds 250
+$p.Play()
+Start-Sleep -Milliseconds 300
+while (-not $p.NaturalDuration.HasTimeSpan) { Start-Sleep -Milliseconds 100 }
+Start-Sleep -Milliseconds ([int]($p.NaturalDuration.TimeSpan.TotalMilliseconds) + 400)
+$p.Close()`;
+  try {
+    const b64 = Buffer.from(script, "utf16le").toString("base64");
+    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", b64], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.on("error", () => { /* 忽略：无声音不影响通知 */ });
+    child.unref();
+  } catch { /* 忽略 */ }
+}
+
 export async function sendToast({ title, message, icon, appId, sound, attribution }) {
   let iconUri = "";
   if (icon && /^https?:/.test(icon)) {
@@ -20,7 +46,7 @@ export async function sendToast({ title, message, icon, appId, sound, attributio
     iconUri = "file:///" + path.resolve(icon).replace(/\\/g, "/");
   }
 
-  // 音效：default=系统默认；silent=静音；system:XXX=系统音；wav 路径=静音 Toast + 自己播放（支持任意音频）
+  // 音效：default=系统默认；silent=静音；system:XXX=系统音；wav/mp3 路径=静音 Toast + 自己播放（支持任意音频）
   const snd = resolveSound(sound);
   let audioTag = "";
   let playBlock = "";
@@ -31,15 +57,11 @@ export async function sendToast({ title, message, icon, appId, sound, attributio
   } else if (snd.kind === "wav") {
     audioTag = `<audio silent="true"/>`;
     if (await exists(snd.path)) {
-      playBlock = `
-Add-Type -AssemblyName presentationCore
-$player = New-Object System.Windows.Media.MediaPlayer
-$player.Open([Uri]"${snd.path.replace(/\\/g, "/")}")
-Start-Sleep -Milliseconds 300
-$player.Play()
-`;
+      // 独立隐藏进程播放：Toast 的 PowerShell 会立刻退出，同进程播放会被截断
+      playAudioDetached(snd.path);
     } else {
-      log.warn(`[TOAST] 自定义音效文件不存在: ${snd.path}，改用系统默认`);
+      // 默认路径下的文件是用户自备的，缺失属正常情况：静默回落系统默认提示音
+      log.info(`[TOAST] 音效文件不存在（${snd.path}），本次使用系统默认提示音`);
       audioTag = "";
     }
   }

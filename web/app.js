@@ -319,6 +319,12 @@ async function openSettings() {
         <h2>设置</h2>
 
         <div class="field">
+          <label>显示名（面板顶部的名字）</label>
+          <input id="s-pname" type="text" maxlength="32" value="${esc(s.profileName || "")}" placeholder="${esc(s.defaultProfileName || "Player")}（默认取 Windows 账户名）">
+          <div class="hint">只影响面板显示，与游戏内的模拟器账户名无关。留空则显示 Windows 账户名。</div>
+        </div>
+
+        <div class="field">
           <label>Steam Web API Key</label>
           <input id="s-key" type="password" placeholder="${s.hasKey ? `已设置：${esc(s.keyMasked)}（留空则不修改）` : "未设置，粘贴你的 key"}">
           <div class="hint">在 <a href="https://steamcommunity.com/dev/apikey" target="_blank" style="color:var(--accent)">steamcommunity.com/dev/apikey</a> 免费申请，用于拉取成就名称/图标/描述。</div>
@@ -359,7 +365,7 @@ async function openSettings() {
           <label class="check"><input id="s-notify" type="checkbox" ${s.notify ? "checked" : ""}> 解锁时弹出 Windows 通知</label>
           <label class="check" style="margin-top:8px"><input id="s-prefetch" type="checkbox" ${s.iconPrefetch ? "checked" : ""}> 预下载成就图标（通知里显示图片）</label>
           <label class="check" style="margin-top:8px"><input id="s-ws" type="checkbox" ${s.websocket?.enabled ? "checked" : ""}> 启用 WebSocket 广播（给直播/悬浮窗用）</label>
-          <div class="hint" style="margin-top:12px">稀有成就音效（Xbox 钻石成就式）：全球解锁率 ≤ 阈值即视为稀有。音效填 .wav 完整路径（任意音频），或 system:Notification.IM 等系统音；留空 = 系统默认声。</div>
+          <div class="hint" style="margin-top:12px">稀有成就音效（Xbox 钻石成就式）：全球解锁率 ≤ 阈值即视为稀有，全成就达成也按稀有处理。音效支持 mp3/wav；相对路径以数据目录为基准，默认读取 <code>sounds/normal.mp3</code> 与 <code>sounds/rare.mp3</code>（即 <code>${esc(s.soundsDir || "data/sounds")}</code>）。文件不存在时回落系统默认声；也可填 system:Notification.IM 等系统音。</div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
             <div style="flex:1;min-width:120px">
               <label>稀有判定阈值（%）</label>
@@ -367,11 +373,11 @@ async function openSettings() {
             </div>
             <div style="flex:2;min-width:200px">
               <label>普通成就音效</label>
-              <input id="s-sndnormal" type="text" value="${esc(s.sound?.normal ?? "")}" placeholder="留空 = 系统默认">
+              <input id="s-sndnormal" type="text" value="${esc(s.sound?.normal ?? "")}" placeholder="sounds/normal.mp3">
             </div>
             <div style="flex:2;min-width:200px">
-              <label>稀有成就音效</label>
-              <input id="s-sndrare" type="text" value="${esc(s.sound?.rare ?? "")}" placeholder="例如 C:\\Windows\\Media\\tada.wav">
+              <label>稀有成就音效 / 全成就音效</label>
+              <input id="s-sndrare" type="text" value="${esc(s.sound?.rare ?? "")}" placeholder="sounds/rare.mp3">
             </div>
           </div>
         </div>
@@ -427,6 +433,7 @@ async function openSettings() {
     $("#s-save").addEventListener("click", async () => {
       try {
         const body = {
+          profileName: $("#s-pname").value,
           lang: $("#s-lang").value,
           timeThreshold: +$("#s-threshold").value,
           tick: +$("#s-tick").value,

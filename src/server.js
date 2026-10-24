@@ -6,7 +6,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { loadConfig, saveConfig, encrypt, resolvedPaths, resolveWallDir } from "./core/config.js";
+import { loadConfig, saveConfig, encrypt, resolvedPaths, resolveWallDir, soundsDir } from "./core/config.js";
 import { getWatchFolders, loadUserDirs } from "./core/discover.js";
 import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
@@ -168,7 +168,8 @@ async function buildLibrary(force = false) {
   const data = {
     games,
     profile: {
-      name: process.env.USERNAME || "Player",
+      name: (cfg.profile?.name || "").trim() || process.env.USERNAME || "Player",
+      custom: !!(cfg.profile?.name || "").trim(),
       gameCount: games.length,
       totalUnlocked,
       totalAchievements: games.reduce((s, g) => s + g.total, 0),
@@ -465,6 +466,9 @@ async function getSettings() {
     keyMasked: maskKey(cfg._primaryKey),
     hasFallbackKey: !!cfg._fallbackKey,
     fallbackKeyMasked: maskKey(cfg._fallbackKey),
+    profileName: cfg.profile?.name || "",
+    defaultProfileName: process.env.USERNAME || "Player",
+    soundsDir: soundsDir(),
     dataRoot: dataRoot(),
     userDirs,
     uiPort: cfg.ui?.port || 0,
@@ -490,6 +494,7 @@ async function updateSettings(body) {
   if (typeof body.iconPrefetch === "boolean") cfg.iconPrefetch = body.iconPrefetch;
   if (Number.isFinite(+body.timeThreshold) && +body.timeThreshold >= 0) cfg.timeThreshold = +body.timeThreshold;
   if (Number.isFinite(+body.tick) && +body.tick >= 0) cfg.tick = +body.tick;
+  if (typeof body.profileName === "string") cfg.profile = { name: body.profileName.trim() };
   if (body.sound && typeof body.sound === "object") {
     cfg.sound = {
       rareThreshold: Number.isFinite(+body.sound.rareThreshold) && +body.sound.rareThreshold >= 0 && +body.sound.rareThreshold <= 100

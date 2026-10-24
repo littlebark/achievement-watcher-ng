@@ -14,6 +14,18 @@
   "action": { "target": "", "cwd": "", "hide": true },
   "toast": { "appId": null },
 
+  "profile": {
+    "_说明": "面板顶部显示名；留空 = 取 Windows 账户名",
+    "name": ""
+  },
+
+  "sound": {
+    "_说明": "音效相对路径以数据目录为基准：把 normal.mp3 / rare.mp3 放进 <数据目录>\\sounds\\ 即可。也可填绝对路径、system:Notification.IM、或 silent。项目不附带版权音效。",
+    "rareThreshold": 10,
+    "normal": "sounds/normal.mp3",
+    "rare": "sounds/rare.mp3"
+  },
+
   "wall": {
     "_说明": "成就墙导出目录；dir 留空 = 默认 <数据目录>\\AchievementWall（随项目走）；enabled:false 整体关闭",
     "dir": "",

@@ -34,9 +34,12 @@ export const DEFAULTS = {
   toast: { appId: null },  // 自定义 AUMID；null=自动选 PowerShell AUMID
   sound: {
     rareThreshold: 10,     // 全球解锁率 ≤ 此百分比视为稀有成就（Xbox 钻石成就同级标准）
-    normal: null,          // 普通成就音效：null/""=系统默认；"silent"；"system:Notification.IM"；wav 完整路径
-    rare: "C:\\Windows\\Media\\tada.wav", // 稀有成就音效（Xbox 式区分；填 wav 路径或 system:）
+    // 音效约定：放在 <数据目录>/sounds/ 下，文件名固定。文件不存在时自动回落系统默认提示音。
+    // 版权音效（如 Xbox 官方音效）不随项目分发，请自行准备后按此命名放入。
+    normal: "sounds/normal.mp3",  // 普通成就音效；也支持 null/""=系统默认、"silent"、"system:Notification.IM"、绝对路径
+    rare: "sounds/rare.mp3",      // 稀有成就（含全成就达成）音效
   },
+  profile: { name: "" },    // 面板顶部显示名；空 = 取 Windows 账户名
   wall: { dir: "", enabled: true }, // 成就墙导出目录（空=默认 <数据目录>/AchievementWall；enabled:false 可整体关闭）
   ui: { port: 0 },         // 面板端口；0 = 内置默认 5179
   paths: {
@@ -75,15 +78,28 @@ export function resolveWallDir(cfg) {
   return cfg?.wall?.dir || defaultWallDir();
 }
 
-// 音效配置解析：null/"" → 系统默认；"silent" → 静音；"system:XXX" → 系统 8 音选一；wav 路径 → 自定义音频
+// 音效配置解析：null/"" → 系统默认；"silent" → 静音；"system:XXX" → 系统 8 音选一；
+// wav/mp3 路径 → 自定义音频（相对路径以数据目录为基准，如 "sounds/normal.mp3"）
 export function resolveSound(spec) {
   if (spec == null || spec === "" || spec === "default") return { kind: "default" };
   if (spec === "silent") return { kind: "silent" };
   if (typeof spec === "string" && spec.startsWith("system:")) return { kind: "system", name: spec.slice(7) };
   if (typeof spec === "object" && spec.system) return { kind: "system", name: spec.system };
-  if (typeof spec === "object" && spec.wav) return { kind: "wav", path: spec.wav };
-  if (typeof spec === "string" && /\.(wav|mp3)$/i.test(spec)) return { kind: "wav", path: spec };
+  if (typeof spec === "object" && spec.wav) return { kind: "wav", path: absolutize(spec.wav) };
+  if (typeof spec === "string" && /\.(wav|mp3)$/i.test(spec)) return { kind: "wav", path: absolutize(spec) };
   return { kind: "default" };
+}
+
+// 相对路径 → 以数据目录为根（便携：音效跟项目走，不依赖系统盘绝对路径）
+function absolutize(p) {
+  const s = String(p).trim().replace(/\//g, "\\");
+  if (/^[A-Za-z]:\\/.test(s) || s.startsWith("\\\\")) return s;
+  return path.join(dataRoot(), s.replace(/^\\+/, ""));
+}
+
+// 音效目录（文档/设置页提示用）
+export function soundsDir() {
+  return path.join(dataRoot(), "sounds");
 }
 
 export async function loadConfig() {
