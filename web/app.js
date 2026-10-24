@@ -220,8 +220,8 @@ async function renderPatchPicker(dir) {
     ? `识别到 AppID = <b>${esc(d.appid)}</b>`
     : "没找到 steam_appid.txt，识别不到 AppID（补丁会失败）";
   let status;
-  if (!d.isGame) {
-    status = "请选择游戏根目录（能看到游戏 exe 或 steam_api64.dll 的那一层）";
+  if (!d.path) {
+    status = "请选择游戏安装目录（能看到游戏 exe 或 steam_api64.dll 的那一层）";
   } else if (patch.state === "goldberg") {
     const extra = [];
     extra.push(patch.backup ? "由本工具打的（留了 .aw2bak 备份）" : "由下载站/破解组打的");
@@ -232,9 +232,15 @@ async function renderPatchPicker(dir) {
     status = `✅ <b>已被 ${esc(patch.otherEmu.join(" / "))} 模拟器接管</b>，它的成就监视我们同样支持——直接启动游戏就能监测解锁，<b>无需打补丁</b>。<br>${idLine}。` +
       `<br><span style="color:#9aa0a6">只有想把模拟器统一换成 Goldberg 时才需要继续：原 DLL 会自动备份为 .aw2bak，可回滚；注意换模拟器后原解锁记录可能读不到（各模拟器存档位置不同）。</span>`;
   } else if (patch.state === "vanilla") {
-    status = `❌ <b>未打补丁</b>（原版 Steam DLL）。${idLine}。<br>可以打补丁：替换为 Goldberg 模拟器并生成成就清单。`;
+    status = `❌ <b>未打补丁</b>（原版 Steam DLL，位于 <code>${esc(patch.dllDir || "")}</code>）。${idLine}。<br>可以打补丁：替换为 Goldberg 模拟器并生成成就清单。`;
+  } else if (patch.state === "xbox") {
+    status = `🟢 <b>这是 Xbox / 微软商店版游戏</b>（检测到 AppxManifest.xml / MicrosoftGame.config）。<br>它不走 Steam，本工具无法接管它的成就——请直接在 <b>Xbox App</b> 里查看成就进度。`;
+  } else if (patch.state === "ue") {
+    status = `⚠️ <b>虚幻引擎游戏</b>（有 Engine 目录），但没找到 steam_api*.dll。<br>${idLine}。<br>` +
+      `<span style="color:#9aa0a6">可能是 Epic / 其他平台版本（这类没有 Steam 成就）；若是 Steam 版，DLL 一般在 <code>Engine\\Binaries\\ThirdParty\\Steamworks\\Steamv*\\Win64\\</code>，检查一下是否被删了。</span>`;
   } else {
-    status = `⚠️ 没有找到 steam_api64.dll / steam_api.dll${patch.budgetHit ? "（目录较大，扫描超时提前停止）" : ""}，可能选的不是游戏安装目录。<br>${idLine}`;
+    status = `⚠️ 没找到任何 Steam 相关文件（steam_api*.dll / steam_appid.txt）${patch.budgetHit ? "；目录较大，扫描超时提前停止" : ""}。<br>` +
+      `可能情况：<b>非 Steam 游戏</b>（Xbox / Epic / 网游 / 绿色版），或者选错了目录（应选游戏安装目录，不是存档/启动器目录）。`;
   }
 
   modalBody.innerHTML = `

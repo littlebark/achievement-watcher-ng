@@ -343,13 +343,13 @@ const PATCH_OTHER_EMU = [
   { group: "3DM", files: ["3dmgame.ini"] },
   { group: "SmartSteamEmu", files: ["smartsteamemu.ini"] },
 ];
-const PATCH_SKIP_DIR = /^(_CommonRedist|__redist|redist|\$RECYCLE\.BIN|System Volume Information|Engine|Extras|\.git|\.svn|node_modules)$/i;
+const PATCH_SKIP_DIR = /^(_CommonRedist|__redist|redist|\$RECYCLE\.BIN|System Volume Information|Extras|\.git|\.svn|node_modules)$/i;
 
 async function detectPatchState(root, { maxDepth = 12, budgetMs = 2000 } = {}) {
   const res = {
     dll: null, dllDir: null, goldbergDll: false, settingsDir: false,
-    achConfig: false, backup: false, otherEmu: [], state: "nodll",
-    budgetHit: false,
+    achConfig: false, backup: false, backupOther: false, otherEmu: [], state: "nodll",
+    xbox: false, ue: false, budgetHit: false,
   };
   const t0 = Date.now();
   let dllRead = false;
@@ -364,12 +364,19 @@ async function detectPatchState(root, { maxDepth = 12, budgetMs = 2000 } = {}) {
       if (e.isFile()) {
         if (!res.dll && /^steam_api(64)?\.dll$/.test(n)) { res.dll = e.name; res.dllDir = dir; }
         if (/^steam_api(64)?\.dll\.aw2bak$/.test(n)) res.backup = true;
+        else if (/^steam_api(64)?\.dll\.(bak|backup|orig|old)$/.test(n)) res.backupOther = true;
+        // 微软商店 / Xbox (GDK/UWP) 版特征
+        if (n === "appxmanifest.xml" || n === "microsoftgame.config") res.xbox = true;
         for (const k of PATCH_OTHER_EMU) {
           if (k.files.includes(n) && !res.otherEmu.includes(k.group)) res.otherEmu.push(k.group);
         }
-      } else if (e.isDirectory() && n === "steam_settings" && !res.settingsDir) {
-        res.settingsDir = true; // steam_settings 目录是 Goldberg 系补丁的标志产物
-        try { await fsp.access(path.join(dir, "steam_settings", "achievements.json")); res.achConfig = true; } catch { /* 没生成过清单 */ }
+      } else if (e.isDirectory()) {
+        if (n === "steam_settings" && !res.settingsDir) {
+          res.settingsDir = true; // steam_settings 目录是 Goldberg 系补丁的标志产物
+          try { await fsp.access(path.join(dir, "steam_settings", "achievements.json")); res.achConfig = true; } catch { /* 没生成过清单 */ }
+        }
+        if (n === "wingdk") res.xbox = true;
+        if (depth === maxDepth && n === "engine") res.ue = true; // 根目录下的 Engine = 虚幻引擎游戏
       }
     }
 
@@ -394,6 +401,8 @@ async function detectPatchState(root, { maxDepth = 12, budgetMs = 2000 } = {}) {
   res.state = res.goldbergDll || res.settingsDir ? "goldberg"
     : res.otherEmu.length ? "other"
     : res.dll ? "vanilla"
+    : res.xbox ? "xbox"
+    : res.ue ? "ue"
     : "nodll";
   return res;
 }
