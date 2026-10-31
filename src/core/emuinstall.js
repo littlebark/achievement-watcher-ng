@@ -135,7 +135,8 @@ async function findFile(root, name, depth = 4) {
 }
 
 // 递归找所有含 steam_api*.dll 的目录（限深 4）
-async function findDllDirs(root, depth = 4, out = []) {
+// 这些目录就是 steam_settings 应当所在的位置（成就清单写入点）
+export async function findDllDirs(root, depth = 4, out = []) {
   let entries;
   try { entries = await fsp.readdir(root, { withFileTypes: true }); }
   catch { return out; }

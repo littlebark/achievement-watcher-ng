@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { exists, mtimeMs, sanitizeFileName } from "../shared/fsx.js";
 import { log, setLogFile } from "../shared/log.js";
 import { acquireSingleInstance } from "../shared/lock.js";
-import { loadConfig, resolveSound } from "../core/config.js";
+import { loadConfig, resolveSound, resolvedPaths } from "../core/config.js";
 import { getWatchFolders, loadUserDirs } from "../core/discover.js";
 import { parseAchievementFile } from "../core/normalize/file-parsers.js";
 import { matchAchievements } from "../core/match.js";
@@ -234,7 +234,7 @@ export async function startWatchdog() {
   }
 
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-  const folders = await getWatchFolders({ userDirs });
+  const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
   log.info(`监视 ${folders.length} 个成就目录`);
 
   // 后台预热成就 schema：首次解锁时不联网，避免网络差导致通知延迟
@@ -328,7 +328,7 @@ export async function startWatchdog() {
       // 热加载配置：面板保存的 API Key / 语言 / 成就墙目录等最迟 60 秒生效，无需重启
       cfg = await loadConfig();
       const dirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-      const next = await getWatchFolders({ userDirs: dirs });
+      const next = await getWatchFolders({ userDirs: dirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
       const added = next.filter((f) => attachWatcher(f));
 
       for (const [key, { watcher, folder }] of watchers) {

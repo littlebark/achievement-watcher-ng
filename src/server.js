@@ -6,13 +6,14 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { loadConfig, saveConfig, encrypt, resolvedPaths, resolveWallDir, soundsDir } from "./core/config.js";
-import { getWatchFolders, loadUserDirs } from "./core/discover.js";
+import { loadConfig, saveConfig, encrypt, resolvedPaths, resolveWallDir, soundsDir, addGameSearchDir } from "./core/config.js";
+import { getWatchFolders, loadUserDirs, parseLocalSavePath, resolveGseSaveBase } from "./core/discover.js";
+import { exists } from "./shared/fsx.js";
 import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
 import { matchAchievements } from "./core/match.js";
-import { detectGameAppid, scanPatchedGames } from "./core/emugen.js";
-import { applyEmu, resolveAccountName, restoreEmuByDir } from "./core/emuinstall.js";
+import { detectGameAppid, scanPatchedGames, generateEmuConfig } from "./core/emugen.js";
+import { applyEmu, resolveAccountName, restoreEmuByDir, findDllDirs, writeAccountName } from "./core/emuinstall.js";
 import { log } from "./shared/log.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -124,7 +125,7 @@ async function buildLibrary(force = false) {
 
   const cfg = await loadConfig();
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-  const folders = await getWatchFolders({ userDirs });
+  const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
 
   const byApp = new Map();
   for (const f of folders) {
@@ -186,7 +187,7 @@ async function buildLibrary(force = false) {
 async function getGameDetail(appid) {
   const cfg = await loadConfig();
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-  const folders = await getWatchFolders({ userDirs });
+  const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
   const folder = folders.find((f) => f.appid === appid);
 
   // 无存档：只展示 schema（全部未解锁）
@@ -443,6 +444,9 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular", userName }
     force: true,
   });
 
+  // 把游戏目录登记进 gameSearchDirs，让发现器纳入监视（解析 configs.user.ini 重定向）
+  await addGameSearchDir(gameDir);
+
   libCache = { at: 0, data: null };
 
   return {
@@ -459,6 +463,135 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular", userName }
     manifest: r.manifestFile,
     schema: pre.ok.length ? "downloaded" : pre.cached.length ? "cached" : "failed",
     schemaError: pre.failed[0]?.error || null,
+  };
+}
+
+// 仅生成成就清单（不替换 DLL）：用于"模拟器已就位、但缺 achievements.json"的情况。
+// 直接复用 emu-gen 的 generateEmuConfig，对每个含 steam_api*.dll 的目录补写
+// steam_settings/achievements.json + 图标，让模拟器能记录解锁、本工具能弹通知。
+async function emuGenOnlyDir({ dir, withIcons = true, userName } = {}) {
+  if (!dir || typeof dir !== "string") throw new Error("请提供游戏目录");
+  const gameDir = path.resolve(dir.trim());
+  const st = await fsp.stat(gameDir).catch(() => null);
+  if (!st?.isDirectory()) throw new Error(`目录不存在：${gameDir}`);
+
+  const appid = await detectGameAppid(gameDir);
+  if (!appid) {
+    throw new Error("在所选目录里没找到 steam_appid.txt，无法确定 AppID。请选游戏根目录（通常能看到 steam_api64.dll 或游戏 exe）");
+  }
+
+  const dllDirs = await findDllDirs(gameDir);
+  if (!dllDirs.length) {
+    throw new Error("该目录没有找到 steam_api*.dll，无法定位成就清单要写入的位置（steam_settings）。");
+  }
+
+  const cfg = await loadConfig();
+  const accountName = await resolveAccountName(userName);
+
+  const genResults = [];
+  for (const d of dllDirs) {
+    const r = await generateEmuConfig({
+      appid,
+      gameDir: d,
+      lang: cfg.lang,
+      withIcons: !!withIcons,
+      apiKey: cfg._primaryKey,
+      fallbackKey: cfg._fallbackKey,
+    });
+    genResults.push({ dir: r.settingsDir, total: r.total, icons: r.icons, gameName: r.gameName });
+  }
+
+  let userIniFile = null;
+  if (accountName) {
+    for (const g of genResults) userIniFile = await writeAccountName(g.dir, accountName);
+  }
+
+  // 补清单后顺手把该游戏的成就 schema 拉全（之后离线也能立刻弹通知）
+  const pre = await prefetchSchemas({
+    appids: [appid],
+    lang: cfg.lang,
+    apiKey: cfg._primaryKey,
+    fallbackKey: cfg._fallbackKey,
+    force: true,
+  });
+
+  // 把游戏目录登记进 gameSearchDirs，让发现器纳入监视（解析 configs.user.ini 重定向）
+  await addGameSearchDir(gameDir);
+
+  libCache = { at: 0, data: null };
+
+  return {
+    appid,
+    gameDir,
+    mode: "gen-only",
+    settingsDirs: genResults,
+    accountName: accountName || null,
+    userIniFile,
+    schema: pre.ok.length ? "downloaded" : pre.cached.length ? "cached" : "failed",
+    schemaError: pre.failed[0]?.error || null,
+  };
+}
+
+// 只读扫描某游戏目录：识别补丁状态、成就是否齐、是否 configs.user.ini 重定向，
+// 并把该目录登记进 gameSearchDirs（让发现器把它纳入监视，解析重定向路径）。
+// 这正是「打补丁窗口选中目录 → 系统识别到已打补丁/清单/重定向 → 加入监控 → 列表出现」的程序化入口。
+async function emuScanDir({ dir } = {}) {
+  if (!dir || typeof dir !== "string") throw new Error("请提供游戏目录");
+  const gameDir = path.resolve(dir.trim());
+  const st = await fsp.stat(gameDir).catch(() => null);
+  if (!st?.isDirectory()) throw new Error(`目录不存在：${gameDir}`);
+
+  const dllDirs = await findDllDirs(gameDir);
+  const appid = await detectGameAppid(gameDir);
+
+  let hasAchList = false;
+  let hasConfigIni = false;
+  let redirect = null;
+  for (const dllDir of dllDirs) {
+    const settings = path.join(dllDir, "steam_settings");
+    if (await exists(path.join(settings, "achievements.json"))) hasAchList = true;
+    const iniPath = path.join(settings, "configs.user.ini");
+    if (await exists(iniPath)) {
+      hasConfigIni = true;
+      const lp = parseLocalSavePath(await fsp.readFile(iniPath, "utf8"));
+      if (lp) {
+        const base = resolveGseSaveBase(dllDir, lp);
+        const progressDir = appid ? path.join(base, String(appid)) : base;
+        let progressFile = null;
+        for (const f of ["achievements.json", "achievements.ini"]) {
+          if (await exists(path.join(progressDir, f))) { progressFile = f; break; }
+        }
+        redirect = {
+          dllDir,
+          raw: lp,
+          base,
+          progressDir,
+          progressFile,
+          exists: await exists(progressDir),
+        };
+      }
+    }
+  }
+
+  const isGame = dllDirs.length > 0;
+  let registered = false;
+  if (isGame) {
+    const r = await addGameSearchDir(gameDir);
+    registered = r.added;
+  }
+
+  libCache = { at: 0, data: null }; // 让列表重新扫描（含重定向）
+
+  return {
+    gameDir,
+    appid,
+    isGame,
+    dllDirs,
+    hasAchList,
+    hasConfigIni,
+    redirect,
+    registered,
+    monitoringActive: (resolvedPaths(await loadConfig()).gameSearchDirs.length) > 0,
   };
 }
 
@@ -711,9 +844,19 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, await emuApplyDir(body));
     }
 
+    if (p === "/api/emu/gen" && req.method === "POST") {
+      const body = await readBody(req);
+      return sendJSON(res, 200, await emuGenOnlyDir(body));
+    }
+
     if (p === "/api/emu/restore" && req.method === "POST") {
       const body = await readBody(req);
       return sendJSON(res, 200, await emuRestoreDir(body));
+    }
+
+    if (p === "/api/emu/scan" && req.method === "GET") {
+      const dir = url.searchParams.get("dir");
+      return sendJSON(res, 200, await emuScanDir({ dir }));
     }
 
     if (p === "/api/settings" && req.method === "POST") {

@@ -12,7 +12,7 @@ import fsp from "node:fs/promises";
 import { exists, writeJSON } from "../shared/fsx.js";
 import { httpFetch as fetch } from "../shared/http.js";
 import { getGameData } from "./schema.js";
-import { resolveWallDir } from "./config.js";
+import { resolveWallDir, resolvedPaths } from "./config.js";
 import { getWatchFolders, loadUserDirs } from "./discover.js";
 import { parseAchievementFile } from "./normalize/file-parsers.js";
 import { matchAchievements } from "./match.js";
@@ -116,7 +116,7 @@ export async function exportWall({ cfg, wallDir, withIcons = true, appids = null
   await fsp.mkdir(wallDir, { recursive: true });
 
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-  const folders = await getWatchFolders({ userDirs });
+  const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
 
   const byApp = new Map();
   for (const f of folders) {

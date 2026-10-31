@@ -154,7 +154,7 @@ async function fetchSchema(appID, lang, key) {
   let lastError;
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     try {
-      return await fetchSchemaOnce(appID, url);
+      return await fetchSchemaOnce(appID, url, lang);
     } catch (e) {
       lastError = e;
       // 只有网络类/服务端错误才重试；key 无效、无成就等确定性错误直接抛
@@ -167,7 +167,7 @@ async function fetchSchema(appID, lang, key) {
   throw lastError;
 }
 
-async function fetchSchemaOnce(appID, url) {
+async function fetchSchemaOnce(appID, url, lang) {
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text();
@@ -176,8 +176,18 @@ async function fetchSchemaOnce(appID, url) {
   const data = await res.json();
   const schema = data.game?.availableGameStats;
   if (!(schema?.achievements?.length)) throw new Error(`SCHEMA_EMPTY: app ${appID} 没有成就数据（key 无效或游戏无成就）`);
+
+  // 游戏名取值优先级（根治内部名乱码）：
+  //   1) 官方商店名 appdetails（最规范、随语言本地化，无需 API key）
+  //   2) GetAppList 规范名（无需 key，已本地缓存）
+  //   3) schema 的 gameName（内部名，部分游戏会返回占位/乱码，如 "ReD"，仅作最后兜底）
+  // 前两者任一失败均返回 null，绝不影响主流程。
+  const storeName = await getStoreName(appID, lang);
+  const appListName = await safeAppListName(appID);
+  const name = storeName || appListName || data.game.gameName || appListName || `app ${appID}`;
+
   return {
-    name: data.game.gameName || (await findInAppList(appID)),
+    name,
     appid: String(appID),
     binary: null,
     img: {
@@ -210,6 +220,25 @@ export async function findInAppList(appID) {
   const app = list.find((a) => a.appid === +appID);
   if (!app) throw new Error(`ERR_NAME_NOT_FOUND: ${appID}`);
   return app.name;
+}
+
+// 官方商店名（appdetails，无需 API key）：最规范的游戏标题，随 l= 本地化。
+// 任何失败都返回 null，绝不影响主流程（避免拖累成就 schema 拉取）。
+async function getStoreName(appID, lang) {
+  try {
+    const url = `https://store.steampowered.com/api/appdetails?appids=${appID}&cc=us&l=${lang || "english"}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const entry = data?.[String(appID)];
+    if (entry?.success && entry.data?.name) return String(entry.data.name).trim();
+  } catch { /* ignore */ }
+  return null;
+}
+
+// GetAppList 规范名兜底（无需 key，已本地缓存）：失败也返回 null，不抛出。
+async function safeAppListName(appID) {
+  try { return await findInAppList(appID); } catch { return null; }
 }
 
 // 下载图标到本地缓存（Toast 需要本地路径）

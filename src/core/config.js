@@ -60,18 +60,51 @@ export const PATH_DEFAULTS = {
   emuExtraSources: [], // 例：["D:\\Tools\\GoldbergGUI-0.3.0\\goldberg"]
 };
 
+// 按解析后的绝对路径去重（忽略大小写；NTFS 不区分大小写，同目录重复只会让扫描跑两遍且界面难看）
+function dedupePaths(arr) {
+  const seen = new Set();
+  const out = [];
+  for (const p of arr) {
+    if (!p) continue;
+    const key = path.resolve(String(p)).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
 // 合并用户配置与内置默认，得到最终生效路径
 export function resolvedPaths(cfg) {
   const p = cfg?.paths || {};
   const list = (v, dft) => {
     const a = Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean) : [];
-    return a.length ? a : [...dft];
+    return a.length ? dedupePaths(a) : [...dft];
   };
   return {
     gameSearchDirs: list(p.gameSearchDirs, PATH_DEFAULTS.gameSearchDirs),
-    emuRoots: [...list(p.emuRoots, PATH_DEFAULTS.emuRoots), path.join(dataRoot(), "tools", "steam-emu")],
+    // 永远追加兜底 <数据目录>/tools/steam-emu；若用户显式配了同一个，dedupe 会去掉重复
+    emuRoots: dedupePaths([...list(p.emuRoots, PATH_DEFAULTS.emuRoots), path.join(dataRoot(), "tools", "steam-emu")]),
     emuExtraSources: list(p.emuExtraSources, PATH_DEFAULTS.emuExtraSources),
   };
+}
+
+// 把某个游戏目录登记进 gameSearchDirs（持久化到 aw2.json）。
+// 这是"走程序流程"地让某游戏被监视的入口：打补丁窗口选中目录、或扫描到已打补丁游戏时调用，
+// 不再需要用户去设置页手动填。重复登记会自动忽略（不写盘）。
+export async function addGameSearchDir(dir) {
+  const raw = String(dir || "").trim();
+  if (!raw) return { added: false, gameSearchDirs: [] };
+  const norm = path.resolve(raw);
+  const normKey = norm.toLowerCase(); // NTFS 不区分大小写，判重也按不区分处理
+  const cfg = await loadConfig();
+  const cur = Array.isArray(cfg.paths?.gameSearchDirs) ? cfg.paths.gameSearchDirs : [];
+  if (cur.some((x) => path.resolve(String(x)).toLowerCase() === normKey)) {
+    return { added: false, gameSearchDirs: dedupePaths([...cur, norm]) };
+  }
+  cfg.paths = { ...cfg.paths, gameSearchDirs: [...cur, norm] };
+  await saveConfig(cfg);
+  return { added: true, gameSearchDirs: dedupePaths(cfg.paths.gameSearchDirs) };
 }
 
 // 成就墙生效目录：显式关闭（wall.enabled=false）→ null；未配置 dir → 默认 <数据目录>/AchievementWall（随项目走）

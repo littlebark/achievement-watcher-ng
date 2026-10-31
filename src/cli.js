@@ -16,8 +16,9 @@ import { log } from "./shared/log.js";
 const [, , cmd, ...args] = process.argv;
 
 async function cmdScan() {
+  const cfg = await loadConfig();
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-  const folders = await getWatchFolders({ userDirs });
+  const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
   console.log(`发现 ${folders.length} 个成就目录：\n`);
   for (const f of folders) {
     console.log(`  [${f.source}] appid=${f.appid ?? "?"}  ${f.dir}`);
@@ -34,7 +35,7 @@ async function cmdList(appID) {
   if (/^\d+$/.test(appID)) {
     // 通过监视表找该 appid 的成就文件
     const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-    const folders = await getWatchFolders({ userDirs });
+    const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
     const folder = folders.find((f) => f.appid === appID);
     if (!folder) return console.log(`未在已知目录中找到 appid=${appID} 的成就文件（先跑 scan 看看）`);
     entries = await parseAchievementFile(path.join(folder.dir, folder.files[0]));
@@ -218,7 +219,7 @@ async function cmdPrefetch(flags = []) {
   const { prefetchSchemas } = await import("./core/schema.js");
   const cfg = await loadConfig();
   const userDirs = await loadUserDirs(path.join(dataRoot(), "cfg"));
-  const folders = await getWatchFolders({ userDirs });
+  const folders = await getWatchFolders({ userDirs, gameSearchDirs: resolvedPaths(cfg).gameSearchDirs });
   const appids = [...new Set(folders.map((f) => f.appid).filter(Boolean))];
   if (!appids.length) return console.log("没有发现任何游戏存档目录，先运行 scan 看看。");
 

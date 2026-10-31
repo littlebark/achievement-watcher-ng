@@ -1,8 +1,40 @@
 // 成就来源发现器：内置模拟器目录表 + 用户自定义目录 → 监视/扫描条目
 import path from "node:path";
-import { walkDirs, exists, readJSON } from "../shared/fsx.js";
+import { walkDirs, exists, readJSON, fsp } from "../shared/fsx.js";
 import { getMyDocuments } from "../shared/win.js";
+import { scanPatchedGames } from "./emugen.js";
 import table from "./emu-paths.json" with { type: "json" };
+
+// GSE 存档目录里承载 <appid> 子文件夹的判定（路径末尾为数字段）
+const APPID_DIR_RE = /(?:^|[\\/])[0-9]+$/;
+// GSE 系进度文件名（与 emu-paths.json 的 gbe_fork 项一致）
+const GSE_FILES = ["achievements.json", "achievements.ini"];
+
+// 解析 gbe_fork/GSE 的 steam_settings/configs.user.ini，取出生效(未注释)的 local_save_path。
+// gbe_fork 把该键放在 [user::saves] 段（也可能在 [user] 等以 [user 开头的段），故按前缀匹配。
+// 没有则返回 null（经典 Goldberg / 未重定向的 GSE 走到这里）。
+export function parseLocalSavePath(text) {
+  let inUser = false;
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith("[") && t.endsWith("]")) {
+      inUser = t.toLowerCase().startsWith("[user");
+      continue;
+    }
+    if (!inUser) continue;
+    if (t.startsWith("#") || t.startsWith(";")) continue; // 注释行跳过
+    const m = t.match(/^local_save_path\s*=\s*(.+)$/i);
+    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+
+// gbe_fork 文档：local_save_path 相对路径以 steam_api.dll 所在目录为基准（已用星之海洋实测印证）。
+export function resolveGseSaveBase(dllDir, localSavePath) {
+  if (path.isAbsolute(localSavePath)) return path.resolve(localSavePath);
+  return path.resolve(dllDir, localSavePath);
+}
 
 // 展开 %ENV% 与 {mydocs} 占位
 async function expandDir(dirTemplate, mydocs) {
@@ -49,7 +81,7 @@ export async function findAchievementFiles(dir, files) {
 
 // 枚举所有可监视的成就目录
 // 返回: [{ source, dir, files:[filename...], appid?, disableProcessCheck, disableTimestampCheck }]
-export async function getWatchFolders({ userDirs = [], includeBuiltin = true } = {}) {
+export async function getWatchFolders({ userDirs = [], includeBuiltin = true, gameSearchDirs = [] } = {}) {
   const mydocs = await getMyDocuments();
   const folders = [];
 
@@ -81,6 +113,47 @@ export async function getWatchFolders({ userDirs = [], includeBuiltin = true } =
           });
         }
       }
+    }
+  }
+
+  // GSE 存档重定向：破解组可能在 steam_settings/configs.user.ini 用 local_save_path
+  // 把成就/存档写到 DLL 目录下的自定义路径（而非默认 %APPDATA%/GSE Saves）。
+  // 不解析的话，这类游戏的成就文件 AW2 永远看不到 —— 表现为「能正常解锁却零通知」。
+  if (includeBuiltin && gameSearchDirs.length) {
+    const defaultGseRoot = path.resolve(await expandDir("%APPDATA%/GSE Saves", mydocs));
+    try {
+      const patched = await scanPatchedGames(gameSearchDirs);
+      for (const { dir: dllDir } of patched) {
+        let base = null;
+        try {
+          const iniPath = path.join(dllDir, "steam_settings", "configs.user.ini");
+          if (await exists(iniPath)) {
+            const lp = parseLocalSavePath(await fsp.readFile(iniPath, "utf8"));
+            if (lp) base = resolveGseSaveBase(dllDir, lp);
+          }
+        } catch { /* 读配置失败则跳过该游戏 */ }
+        if (!base) continue;
+        // 重定向到默认 GSE 目录时由上方 builtin 已覆盖，跳过避免重复监视
+        if (path.resolve(base) === defaultGseRoot) continue;
+        const dirs = await walkDirs(base, {
+          depth: 4,
+          test: (full) => APPID_DIR_RE.test(full.slice(base.length)),
+        });
+        for (const dir of dirs) {
+          const files = await findAchievementFiles(dir, GSE_FILES);
+          if (files.length === 0) continue;
+          folders.push({
+            source: "GSE 重定向(local_save_path)",
+            dir,
+            files,
+            appid: appidFromPath(dir),
+            disableProcessCheck: false,
+            disableTimestampCheck: false,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("[DISCOVER] 重定向扫描失败：" + e.message);
     }
   }
 

@@ -223,11 +223,14 @@ async function renderPatchPicker(dir) {
   if (!d.path) {
     status = "请选择游戏安装目录（能看到游戏 exe 或 steam_api64.dll 的那一层）";
   } else if (patch.state === "goldberg") {
-    const extra = [];
-    extra.push(patch.backup ? "由本工具打的（留了 .aw2bak 备份）" : "由下载站/破解组打的");
-    extra.push(patch.achConfig ? "成就清单已生成" : "但缺少成就清单，建议再打一次补齐全成就列表");
-    status = `✅ <b>已经是 Goldberg 系模拟器</b>，可直接启动游戏，无需再打补丁。<br>${idLine}；${extra.join("，")}。` +
-      `<br><span style="color:#9aa0a6">仍可点「开始打补丁」刷新成就清单/图标、换游戏内用户名；原 DLL 备份会保留。</span>`;
+    if (patch.achConfig) {
+      const who = patch.backup ? "由本工具打的（留了 .aw2bak 备份）" : "由下载站/破解组打的";
+      status = `✅ <b>已经是 Goldberg 系模拟器</b>，成就清单也齐了，可直接启动游戏。<br>${idLine}；${who}。`;
+    } else {
+      const who = patch.backup ? "由本工具打的（留了 .aw2bak 备份）" : "由下载站/破解组打的";
+      status = `✅ <b>已经是 Goldberg 系模拟器</b>（${who}），但<b>缺少成就清单</b>——模拟器收不到解锁事件、本工具也不会弹通知。<br>${idLine}。` +
+        `<br><span style="color:#d8b168">点「补全成就清单」即可生成 achievements.json 与图标（<b>不动模拟器 DLL</b>）；或点「开始打补丁」整体重做（会重拷 DLL，但备份会保留）。</span>`;
+    }
   } else if (patch.state === "other") {
     status = `✅ <b>已被 ${esc(patch.otherEmu.join(" / "))} 模拟器接管</b>，它的成就监视我们同样支持——直接启动游戏就能监测解锁，<b>无需打补丁</b>。<br>${idLine}。` +
       `<br><span style="color:#9aa0a6">只有想把模拟器统一换成 Goldberg 时才需要继续：原 DLL 会自动备份为 .aw2bak，可回滚；注意换模拟器后原解锁记录可能读不到（各模拟器存档位置不同）。</span>`;
@@ -265,6 +268,7 @@ async function renderPatchPicker(dir) {
       </div>
 
       <div class="row">
+        ${patch.state === "goldberg" && !patch.achConfig ? `<button id="p-gen" class="btn btn-accent" ${d.isGame ? "" : "disabled"}>补全成就清单</button>` : ""}
         <button id="p-apply" class="btn" ${d.isGame ? "" : "disabled"}>开始打补丁</button>
         ${patch.backup ? `<button id="p-restore" class="btn btn-ghost" title="还原为本工具打补丁前的状态">恢复原样</button>` : ""}
         <span id="p-msg" class="hint"></span>
@@ -289,6 +293,49 @@ async function renderPatchPicker(dir) {
     if (e.key === "Enter") renderPatchPicker(e.target.value.trim());
   });
   $("#p-apply").addEventListener("click", () => applyPatch(d.path));
+  if (patch.state === "goldberg" && !patch.achConfig) {
+    const genBtn = $("#p-gen");
+    if (genBtn) genBtn.addEventListener("click", () => genOnlyPatch(d.path));
+  }
+
+  // 选好游戏目录后：只读扫描并登记到监视列表（解析 configs.user.ini 重定向，让游戏出现在主列表）
+  if (d.path && d.isGame) {
+    scanAndRegister(d.path);
+  }
+}
+
+// 选好游戏目录后：只读扫描 + 登记到监视列表（解析 configs.user.ini 重定向）
+async function scanAndRegister(dir) {
+  const field = document.querySelector("#p-dir")?.closest(".field");
+  if (!field) return;
+  let box = document.getElementById("p-scan");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "p-scan";
+    box.className = "hint";
+    box.style.marginTop = "10px";
+    box.style.lineHeight = "1.7";
+    field.appendChild(box);
+  }
+  box.textContent = "正在扫描该目录并登记到监视列表…";
+  try {
+    const r = await api(`/api/emu/scan?dir=${encodeURIComponent(dir)}`);
+    const lines = [];
+    lines.push(`🔎 扫描结果：已登记到监视列表 ${r.registered ? "✅（新加入 gameSearchDirs）" : "（已在列表中）"}`);
+    if (r.appid) lines.push(`AppID：<b>${esc(r.appid)}</b>`);
+    lines.push(`steam_api*.dll 目录：${r.dllDirs.length} 个；成就清单 achievements.json：${r.hasAchList ? "✅ 已存在" : "❌ 缺失"}`);
+    lines.push(`configs.user.ini：${r.hasConfigIni ? "✅ 存在" : "❌ 缺失"}`);
+    if (r.redirect) {
+      lines.push(`发现 local_save_path 重定向 → <code>${esc(r.redirect.base)}</code>`);
+      lines.push(`成就存档目录：<code>${esc(r.redirect.progressDir)}</code> ${r.redirect.exists ? "✅ 已存在" : "❌ 不存在"}${r.redirect.progressFile ? `（含 ${esc(r.redirect.progressFile)}）` : ""}`);
+    } else if (r.hasConfigIni) {
+      lines.push(`（configs.user.ini 未设置 local_save_path，走默认 GSE Saves 目录）`);
+    }
+    box.innerHTML = lines.join("<br>");
+    if (r.registered) await loadLibrary(true); // 立即刷新主列表，让游戏出现
+  } catch (e) {
+    box.textContent = `扫描登记失败：${e.message}`;
+  }
 }
 
 // 恢复原样：回滚本工具对该目录最近一次打补丁
@@ -370,6 +417,27 @@ async function applyPatch(dir) {
       b.addEventListener("click", () => { location.hash = "settings"; });
       msg.after(b);
     }
+  }
+}
+
+// 仅补全成就清单（不动模拟器 DLL）：用于"模拟器已就位、但缺 achievements.json"的情况
+async function genOnlyPatch(dir) {
+  const btn = $("#p-gen");
+  const msg = $("#p-msg");
+  if (btn) btn.disabled = true;
+  if (msg) msg.textContent = "处理中：拉取成就清单 → 下载图标（不动模拟器 DLL）…（可能 1-2 分钟）";
+  try {
+    const r = await api("/api/emu/gen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir, withIcons: true, userName: ($("#p-user")?.value || "").trim() }),
+    });
+    const totals = (r.settingsDirs || []).map((s) => `${s.total} 条`).join("、");
+    toast(`已补全成就清单（${totals}），重启游戏即可收到通知`);
+    renderPatchPicker(dir); // 刷新状态，按钮应消失、显示"成就清单已生成"
+  } catch (e) {
+    if (msg) msg.textContent = `补全失败：${e.message}`; else alert(`补全失败：${e.message}`);
+    if (btn) btn.disabled = false;
   }
 }
 
