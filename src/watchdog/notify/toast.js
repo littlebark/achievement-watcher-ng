@@ -37,7 +37,7 @@ $p.Close()`;
   } catch { /* 忽略 */ }
 }
 
-export async function sendToast({ title, message, icon, appId, sound, attribution }) {
+export async function sendToast({ title, message, icon, appId, sound, attribution, scenario }) {
   let iconUri = "";
   if (icon && /^https?:/.test(icon)) {
     // http 图标 WinRT 不收，调用方应先 prefetch 成本地路径；此处兜底忽略
@@ -67,13 +67,19 @@ export async function sendToast({ title, message, icon, appId, sound, attributio
   }
   const attributionTag = attribution ? `<text placement="attribution">${xmlEscape(attribution)}</text>` : "";
 
+  // 通知场景：urgent/reminder/alarm/incomingCall 不受 Windows 专注助手/游戏模式抑制，
+  // 能在全屏游戏上正常弹出；default（或不认识的值）会被游戏时规则静默吞掉。
+  const SCENARIOS = new Set(["default", "urgent", "reminder", "alarm", "incomingCall"]);
+  const sc = scenario && SCENARIOS.has(scenario) ? scenario : "urgent";
+  const scenarioAttr = sc === "default" ? "" : ` scenario="${sc}"`;
+
   const aumid = appId || DEFAULT_AUMID;
   const imageTag = iconUri ? `<image placement="appLogoOverride" src="${xmlEscape(iconUri)}" hint-crop="circle"/>` : "";
   const script = `
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
 \$xmlText = @'
-<toast activationType="protocol" launch="">
+<toast activationType="protocol" launch=""${scenarioAttr}>
   <visual>
     <binding template="ToastGeneric">
       ${imageTag}

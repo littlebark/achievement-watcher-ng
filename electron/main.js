@@ -84,6 +84,38 @@ function createOverlayWindow() {
   });
 }
 
+// 每次要弹卡片前，确保浮层在「光标所在屏幕」且处于最高置顶、可见状态。
+// 解决两类问题：
+//   ① 游戏在副屏时，浮层被钉在主屏，卡片渲染了却看不见；
+//   ② 游戏抢焦点 / 切换显示模式后，Windows 把浮层重新分层压到游戏之下
+//      （screen-saver 置顶不是永久免疫，需每次重新断言）。
+function revealOverlay() {
+  if (!win) return;
+  try {
+    const cursor = screen.getCursorScreenPoint();
+    const target = screen.getDisplayNearestPoint(cursor);
+    const b = win.getBounds();
+    const current = screen.getDisplayNearestPoint({ x: b.x, y: b.y });
+    const width = b.width || 420;
+    const height = b.height || Math.min(700, target.workArea.height - 40);
+    // 仅在跨屏时重新定位，避免同屏时每帧抖动
+    if (current.id !== target.id) {
+      win.setBounds({
+        width,
+        height,
+        x: target.workArea.x + target.workArea.width - width - 8,
+        y: target.workArea.y + target.workArea.height - height - 8,
+      });
+    }
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (!win.isVisible()) win.showInactive();
+    log.info(`[OVERLAY] reveal ok vis=${win.isVisible()} monitor=${target.id} rect=(${win.getBounds().x},${win.getBounds().y})`);
+  } catch (e) {
+    log.warn(`[OVERLAY] reveal 失败: ${e.message}`);
+  }
+}
+
 // 连接本机 watchdog 的 WS 广播（含重连；watchdog 由 startWatchdog() 在本进程内启动）
 function connectBroadcast() {
   const cfg = globalThis.__aw2cfg;
@@ -102,6 +134,7 @@ function connectBroadcast() {
             const snd = resolveSound(payload.rare ? cfg?.sound?.rare : cfg?.sound?.normal);
             if (snd.kind === "wav") payload.soundPath = snd.path;
           }
+          revealOverlay(); // 弹窗前先把浮层挪到光标所在屏并重新置顶，确保可见
           win?.webContents.send("aw2:achievement", payload);
         } catch { /* ignore */ }
       });

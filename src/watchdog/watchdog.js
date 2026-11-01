@@ -96,6 +96,7 @@ async function notify(achievement, game, options, delay = 0) {
         appId: options.cfg.toast?.appId,
         sound: isRare ? options.cfg.sound?.rare : options.cfg.sound?.normal,
         attribution,
+        scenario: options.cfg.toast?.scenario,
       });
       log.info(`[NOTIFY] ${payload.game} :: ${payload.displayName}${rare ? ` [稀有 ${rarePercent?.toFixed(1)}%]` : ""}`);
     } catch (e) {

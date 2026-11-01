@@ -75,6 +75,7 @@ async function cmdTestToast() {
       title: "aw2 测试通知",
       message: "如果你看到这条 Toast，说明通知链路 OK 🎉",
       icon: null,
+      scenario: "urgent",
     });
     console.log("Toast 已发送。");
   } catch (e) {

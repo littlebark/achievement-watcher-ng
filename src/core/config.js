@@ -33,7 +33,7 @@ export const DEFAULTS = {
   notify: true,
   websocket: { enabled: true, port: 8083, auth: null },
   action: { target: "", cwd: "", hide: true }, // 解锁时执行的外部命令，注入 AW_* 环境变量
-  toast: { appId: null },  // 自定义 AUMID；null=自动选 PowerShell AUMID
+  toast: { appId: null, scenario: "urgent" },  // appId: 自定义 AUMID(null=自动选 PowerShell AUMID)；scenario: 通知场景，urgent 可突破专注助手/游戏模式对全屏游戏的抑制
   sound: {
     rareThreshold: 10,     // 全球解锁率 ≤ 此百分比视为稀有成就（Xbox 钻石成就同级标准）
     // 音效约定：放在 <数据目录>/sounds/ 下，文件名固定。文件不存在时自动回落系统默认提示音。
@@ -144,6 +144,20 @@ export function soundsDir() {
   return path.join(dataRoot(), "sounds");
 }
 
+// 逐层深合并：对象逐键合并（保留用户已设的子键，补回缺失的默认子键），
+// 数组/基本类型直接以 override 为准。避免浅合并把整个嵌套对象（如 toast/sound）整体替换、丢掉新增默认字段。
+function isPlainObject(v) {
+  return v && typeof v === "object" && !Array.isArray(v);
+}
+function deepMerge(base, override) {
+  if (!isPlainObject(base) || !isPlainObject(override)) return override !== undefined ? override : base;
+  const out = { ...base };
+  for (const k of Object.keys(override)) {
+    out[k] = isPlainObject(base[k]) && isPlainObject(override[k]) ? deepMerge(base[k], override[k]) : override[k];
+  }
+  return out;
+}
+
 export async function loadConfig() {
   const cfgFile = path.join(dataRoot(), "aw2.json");
   let cfg = { ...DEFAULTS };
@@ -163,11 +177,11 @@ export async function loadConfig() {
     } catch { /* ignore */ }
   }
 
-  // 2) aw2.json 覆盖
+  // 2) aw2.json 覆盖（逐层深合并，保留嵌套默认字段）
   if (await exists(cfgFile)) {
     try {
       const saved = await readJSON(cfgFile);
-      cfg = { ...cfg, ...saved };
+      cfg = deepMerge(cfg, saved);
     } catch (e) { console.warn(`aw2.json 损坏，使用默认配置: ${e.message}`); }
   }
 
