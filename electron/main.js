@@ -84,33 +84,31 @@ function createOverlayWindow() {
   });
 }
 
-// 每次要弹卡片前，确保浮层在「光标所在屏幕」且处于最高置顶、可见状态。
-// 解决两类问题：
-//   ① 游戏在副屏时，浮层被钉在主屏，卡片渲染了却看不见；
-//   ② 游戏抢焦点 / 切换显示模式后，Windows 把浮层重新分层压到游戏之下
-//      （screen-saver 置顶不是永久免疫，需每次重新断言）。
+// 每次要弹卡片前，确保浮层定位在主显示器右下角、处于最高置顶、可见状态。
+// 定位策略：始终基于主显示器 workArea，不再用「鼠标光标所在屏」选屏——
+//   ① 避免系统枚举到虚拟显示器（如 GameViewer 串流创建的虚拟屏）时，光标选屏
+//      把卡片 setBounds 到错屏工作区，导致弹窗偏离主屏右下角（往西北偏）；
+//   ② 每次都按主屏 workArea 重算目标坐标，显示器配置变化（分辨率/缩放/虚拟屏
+//      插拔）后能自愈，不会被一次错位「锁死」；仅当坐标/尺寸确实变化才 setBounds，
+//      同屏同位置时零抖动。
+// 置顶断言仍每次执行：screen-saver 置顶非永久免疫，游戏抢焦点或切显示模式后需重申。
 function revealOverlay() {
   if (!win) return;
   try {
-    const cursor = screen.getCursorScreenPoint();
-    const target = screen.getDisplayNearestPoint(cursor);
+    const primary = screen.getPrimaryDisplay();
+    const { workArea } = primary;
     const b = win.getBounds();
-    const current = screen.getDisplayNearestPoint({ x: b.x, y: b.y });
     const width = b.width || 420;
-    const height = b.height || Math.min(700, target.workArea.height - 40);
-    // 仅在跨屏时重新定位，避免同屏时每帧抖动
-    if (current.id !== target.id) {
-      win.setBounds({
-        width,
-        height,
-        x: target.workArea.x + target.workArea.width - width - 8,
-        y: target.workArea.y + target.workArea.height - height - 8,
-      });
+    const height = b.height || Math.min(700, workArea.height - 40);
+    const x = workArea.x + workArea.width - width - 8;
+    const y = workArea.y + workArea.height - height - 8;
+    if (b.x !== x || b.y !== y || b.width !== width || b.height !== height) {
+      win.setBounds({ width, height, x, y });
     }
     win.setAlwaysOnTop(true, "screen-saver");
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     if (!win.isVisible()) win.showInactive();
-    log.info(`[OVERLAY] reveal ok vis=${win.isVisible()} monitor=${target.id} rect=(${win.getBounds().x},${win.getBounds().y})`);
+    log.info(`[OVERLAY] reveal ok vis=${win.isVisible()} monitor=${primary.id} rect=(${win.getBounds().x},${win.getBounds().y})`);
   } catch (e) {
     log.warn(`[OVERLAY] reveal 失败: ${e.message}`);
   }
