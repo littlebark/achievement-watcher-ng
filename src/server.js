@@ -12,7 +12,7 @@ import { exists } from "./shared/fsx.js";
 import { parseAchievementFile } from "./core/normalize/file-parsers.js";
 import { getGameData, prefetchSchemas, dataRoot } from "./core/schema.js";
 import { matchAchievements } from "./core/match.js";
-import { detectGameAppid, scanPatchedGames, generateEmuConfig } from "./core/emugen.js";
+import { detectGameAppid, scanPatchedGames, generateEmuConfig, resolveAppidForPatch } from "./core/emugen.js";
 import { applyEmu, resolveAccountName, restoreEmuByDir, findDllDirs, writeAccountName } from "./core/emuinstall.js";
 import { log } from "./shared/log.js";
 
@@ -415,10 +415,7 @@ async function emuApplyDir({ dir, withIcons = true, mode = "regular", userName }
   const st = await fsp.stat(gameDir).catch(() => null);
   if (!st?.isDirectory()) throw new Error(`目录不存在：${gameDir}`);
 
-  const appid = await detectGameAppid(gameDir);
-  if (!appid) {
-    throw new Error("在所选目录里没找到 steam_appid.txt，无法确定 AppID。请选游戏根目录（通常能看到 steam_api64.dll 或游戏 exe）");
-  }
+  const appid = await resolveAppidForPatch(gameDir);
 
   const cfg = await loadConfig();
   const preState = await detectPatchState(gameDir);
@@ -475,10 +472,7 @@ async function emuGenOnlyDir({ dir, withIcons = true, userName } = {}) {
   const st = await fsp.stat(gameDir).catch(() => null);
   if (!st?.isDirectory()) throw new Error(`目录不存在：${gameDir}`);
 
-  const appid = await detectGameAppid(gameDir);
-  if (!appid) {
-    throw new Error("在所选目录里没找到 steam_appid.txt，无法确定 AppID。请选游戏根目录（通常能看到 steam_api64.dll 或游戏 exe）");
-  }
+  const appid = await resolveAppidForPatch(gameDir);
 
   const dllDirs = await findDllDirs(gameDir);
   if (!dllDirs.length) {

@@ -4,6 +4,7 @@
 import path from "node:path";
 import fsp from "node:fs/promises";
 import { exists, writeJSON } from "../shared/fsx.js";
+import { log } from "../shared/log.js";
 import { httpFetch as fetch } from "../shared/http.js";
 import { getGameData } from "./schema.js";
 import { loadConfig, resolvedPaths } from "./config.js";
@@ -69,6 +70,44 @@ export async function detectGameAppid(gameDir) {
   }
 
   return walk(gameDir, 4);
+}
+
+// 从 RUNE 等模拟器的专属 ini 读取 AppID（纯读取，不写文件）。
+// RUNE 不生成 steam_appid.txt，其 AppID 写在 steam_emu.ini 的 AppId= 行。
+async function readAppidFromEmuIni(gameDir) {
+  const candidates = [
+    "steam_emu.ini",
+    path.join("steam_settings", "steam_emu.ini"),
+    "rune.ini",
+    path.join("steam_settings", "rune.ini"),
+  ];
+  for (const rel of candidates) {
+    try {
+      const txt = await fsp.readFile(path.join(gameDir, rel), "utf8");
+      const m = txt.match(/^\s*AppId\s*=\s*(\d{3,8})\s*$/im);
+      if (m) return m[1];
+    } catch { /* next */ }
+  }
+  return null;
+}
+
+// 打补丁流程解析 AppID：优先 steam_appid.txt；若游戏已被 RUNE 等模拟器接管但缺该文件，
+// 则从 steam_emu.ini 推断并自动在游戏根目录补全 steam_appid.txt，使后续流程无感继续。
+// 返回 appid 字符串；两者都失败则抛出明确错误。
+export async function resolveAppidForPatch(gameDir) {
+  const direct = await detectGameAppid(gameDir);
+  if (direct) return direct;
+
+  const emuAppid = await readAppidFromEmuIni(gameDir);
+  if (emuAppid) {
+    const appidFile = path.join(gameDir, "steam_appid.txt");
+    if (!(await exists(appidFile))) {
+      await fsp.writeFile(appidFile, emuAppid + "\n");
+      log.info(`[PATCH] 检测到 RUNE 接管（steam_emu.ini AppId=${emuAppid}），已自动生成 ${appidFile}`);
+    }
+    return emuAppid;
+  }
+  throw new Error("在所选目录里没找到 steam_appid.txt，也无法从模拟器配置（steam_emu.ini）推断 AppID。请选游戏根目录（通常能看到 steam_api64.dll 或游戏 exe）");
 }
 
 // 扫描已打补丁（无论谁打的）但可能还没进面板的游戏：

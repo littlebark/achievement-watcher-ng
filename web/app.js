@@ -232,8 +232,12 @@ async function renderPatchPicker(dir) {
         `<br><span style="color:#d8b168">点「补全成就清单」即可生成 achievements.json 与图标（<b>不动模拟器 DLL</b>）；或点「开始打补丁」整体重做（会重拷 DLL，但备份会保留）。</span>`;
     }
   } else if (patch.state === "other") {
+    const isRune = patch.otherEmu.some(e => /^rune$/i.test(e));
     status = `✅ <b>已被 ${esc(patch.otherEmu.join(" / "))} 模拟器接管</b>，它的成就监视我们同样支持——直接启动游戏就能监测解锁，<b>无需打补丁</b>。<br>${idLine}。` +
       `<br><span style="color:#9aa0a6">只有想把模拟器统一换成 Goldberg 时才需要继续：原 DLL 会自动备份为 .aw2bak，可回滚；注意换模拟器后原解锁记录可能读不到（各模拟器存档位置不同）。</span>`;
+    if (isRune) {
+      status += `<br><br><span style="color:#e08a4a">⚠️ <b>RUNE 模拟器不够稳定</b>：部分游戏（如仁王3）由于文件格式不规范，本工具不会弹通知。建议点「开始打补丁」换成 Goldberg 模拟器。</span>`;
+    }
   } else if (patch.state === "vanilla") {
     status = `❌ <b>未打补丁</b>（原版 Steam DLL，位于 <code>${esc(patch.dllDir || "")}</code>）。${idLine}。<br>可以打补丁：替换为 Goldberg 模拟器并生成成就清单。`;
   } else if (patch.state === "xbox") {
