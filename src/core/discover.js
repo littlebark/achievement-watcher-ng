@@ -49,23 +49,45 @@ export function appidFromPath(dirPath) {
   return m ? m[0] : null;
 }
 
+// 在某目录直接读 ini 提取 AppID（SmartSteamEmu/SSE/flt 的 AppId= 行，或纯数字 steam_appid.txt）
+async function readAppidFromIniAt(dir) {
+  for (const f of ["SteamConfig.ini", "SmartSteamEmu.ini", "steam_appid.txt", "steam_settings/steam_appid.txt", "flt.ini"]) {
+    try {
+      const txt = await fsp.readFile(path.join(dir, f), "utf8");
+      const m = txt.match(/(?:^\s*(?:AppID|AppId|appid)\s*=\s*|^\s*)(\d{3,8})\s*$/im);
+      if (m) return m[1];
+    } catch { /* next */ }
+  }
+  return null;
+}
+
 // 路径里没有数字时，从上游配置推断 appid：
-// SmartSteamEmu 的 SteamConfig.ini / SmartSteamEmu.ini，或 steam_appid.txt
+// SmartSteamEmu 的 SteamConfig.ini / SmartSteamEmu.ini，或 steam_appid.txt。
+// 先向上 5 层；都没找到再向下最多 6 层递归搜（ini 可能埋在子目录，如 FF IX 的 x64\SteamConfig.ini）
 async function appidFromConfig(dir) {
   let cur = dir;
   for (let i = 0; i < 5; i++) {
-    for (const f of ["SteamConfig.ini", "SmartSteamEmu.ini", "steam_appid.txt", "steam_settings/steam_appid.txt", "flt.ini"]) {
-      try {
-        const txt = await (await import("node:fs/promises")).readFile(path.join(cur, f), "utf8");
-        const m = txt.match(/(?:^\s*(?:AppID|AppId|appid)\s*=\s*|^\s*)(\d{3,8})\s*$/im);
-        if (m) return m[1];
-      } catch { /* next */ }
-    }
+    const r = await readAppidFromIniAt(cur);
+    if (r) return r;
     const parent = path.dirname(cur);
     if (parent === cur) break;
     cur = parent;
   }
-  return null;
+  async function walk(d, depth) {
+    let entries;
+    try { entries = await fsp.readdir(d, { withFileTypes: true }); } catch { return null; }
+    const r = await readAppidFromIniAt(d);
+    if (r) return r;
+    if (depth <= 0) return null;
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith(".") && !/^\$/.test(e.name)) {
+        const hit = await walk(path.join(d, e.name), depth - 1);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+  return walk(dir, 6);
 }
 
 // 该目录下存在哪些成就文件（按白名单顺序优先级）

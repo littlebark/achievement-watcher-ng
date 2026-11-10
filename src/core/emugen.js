@@ -43,7 +43,8 @@ async function readAppidIn(dir) {
   return null;
 }
 
-// 从游戏目录推断 appid：优先本目录，其次向下 4 层找 steam_appid.txt
+// 从游戏目录推断 appid：优先本目录，其次向下 8 层找 steam_appid.txt
+// （Unity 游戏 steam_settings 常在 Duckov_Data/Plugins/x86_64/ 第 5 层，深度不足会漏识别）
 export async function detectGameAppid(gameDir) {
   const direct = await readAppidIn(gameDir);
   if (direct) return direct;
@@ -69,7 +70,7 @@ export async function detectGameAppid(gameDir) {
     return null;
   }
 
-  return walk(gameDir, 4);
+  return walk(gameDir, 8);
 }
 
 // 从 RUNE 等模拟器的专属 ini 读取 AppID（纯读取，不写文件）。

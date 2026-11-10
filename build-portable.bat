@@ -33,5 +33,16 @@ if errorlevel 1 (
 ) else (
   echo.
   echo [OK] Done. Output: dist\aw2-desktop-portable.exe
+  if exist "Y:\GameTools\AchievementWatcher" (
+    echo [INFO] Y:\GameTools\AchievementWatcher found, replacing exe ^(overwrite same-named file^) ...
+    copy /Y "dist\aw2-desktop-portable.exe" "Y:\GameTools\AchievementWatcher\aw2-desktop-portable.exe" >nul
+    if errorlevel 1 (
+      echo [WARN] Replace failed ^(file may be in use^). Manually copy dist\aw2-desktop-portable.exe
+    ) else (
+      echo [OK] Replaced Y:\GameTools\AchievementWatcher\aw2-desktop-portable.exe
+    )
+  ) else (
+    echo [INFO] Y:\GameTools\AchievementWatcher not found, skip auto-copy.
+  )
 )
 pause
