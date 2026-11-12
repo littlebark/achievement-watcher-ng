@@ -29,13 +29,19 @@
       border-radius: 10px;
       color: #fff;
       cursor: pointer;
-      transform: translateX(430px);
-      animation: slidein 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      /* 默认态就是「窗口内、完全可见」——动画只做锦上添花。
+         以前初始态是 translateX(430px)（窗口只有 420px 宽），一旦窗口被
+         游戏遮挡、Chromium 把动画节流/暂停，卡片就整块停在窗口外，表现成
+         「只有声音没有弹窗」。现在动画哪怕一帧都不播，卡片也看得见。 */
+      animation: slidein 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       position: relative;
       overflow: hidden;
     }
     .card.out { animation: slideout 0.35s ease-in forwards; }
-    @keyframes slidein { to { transform: translateX(0); } }
+    @keyframes slidein {
+      from { opacity: 0.5; transform: translateY(10px); }
+      to   { opacity: 1;   transform: none; }
+    }
     @keyframes slideout { to { transform: translateX(430px); opacity: 0; } }
 
     /* 左侧识别条：普通=Xbox 绿，稀有=金 */

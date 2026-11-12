@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld("aw2", {
   onAchievement: (cb) => ipcRenderer.on("aw2:achievement", (_e, data) => cb(data)),
   openPanel: () => ipcRenderer.invoke("aw2:openPanel"),
   setIgnore: (ignore) => ipcRenderer.send("aw2:set-ignore", ignore),
+  idle: () => ipcRenderer.send("aw2:idle"), // 队列播完 → 主进程隐藏浮层
 });

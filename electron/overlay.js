@@ -81,6 +81,9 @@ function addCard(p) {
       card.remove();
       playing = false;
       pump(); // 退场完毕，播下一张
+      // 队列彻底空了 → 通知主进程隐藏浮层。下一张卡片会重新 show，
+      // 保证每次弹窗都走一次「显示」而不是指望后台窗口自己补帧。
+      if (!playing && queue.length === 0) window.aw2?.idle();
     }, EXIT_MS);
   }
 
@@ -92,6 +95,9 @@ function addCard(p) {
   card.addEventListener("click", () => { window.aw2?.openPanel(); finish(); });
 
   stack.replaceChildren(card); // 一次只显示一张
+  // 强制同步一次布局：让刚插入的卡片立刻进入本轮合成，不必等下一次
+  // 由节流/遮挡决定的异步帧（首张卡片丢失就是因为等了那一帧）。
+  void card.offsetHeight;
 }
 
 // 有卡片时窗口可点，无卡片时鼠标穿透（不挡游戏）

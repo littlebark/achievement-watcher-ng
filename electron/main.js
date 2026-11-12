@@ -15,10 +15,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 本应用的成就通知走自绘弹窗；cfg.notify.mode 显式配置时以配置为准
 process.env.AW2_NOTIFY_MODE = "overlay";
 
-// 弹窗是纯 2D 卡片，禁用硬件加速：规避 GPU 驱动异常/独占全屏下的兼容问题
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("disable-gpu-compositing");
+// 透明置顶窗口要靠 GPU 合成出帧：禁掉硬件加速后，透明窗口的首帧很容易整块
+// 是透明的（表现就是「只有声音、没有卡片」）。默认走 GPU；只有个别驱动异常的
+// 机器可以设 AW2_DISABLE_GPU=1 退回软件合成。
+if (process.env.AW2_DISABLE_GPU === "1") {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+}
 
 // userData 隔离：默认会落到 %APPDATA%\Electron（与其他未打包应用共用），改成自己的目录
 import { dataRoot } from "../src/core/schema.js";
@@ -40,6 +44,7 @@ if (!app.requestSingleInstanceLock()) {
 let win = null;
 let ws = null;
 let wsRetry = null;
+let revealSeq = 0; // 每次 reveal 自增；渲染层报"播完了"时用它防竞态（期间又来新卡片就不隐藏）
 
 function createOverlayWindow() {
   const { workArea } = screen.getPrimaryDisplay();
@@ -61,16 +66,30 @@ function createOverlayWindow() {
     maximizable: false,
     focusable: false,
     show: false,
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // 窗口被游戏/其他窗口遮挡时，Chromium 默认会节流定时器与动画帧；
+      // 弹窗恰恰要在"被遮挡"的状态下照常出帧，所以关掉。
+      backgroundThrottling: false,
     },
   });
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, "overlay.html"));
-  win.showInactive(); // 不抢焦点：游戏全屏时弹卡片不切屏
+
+  // 启动时只做一次「预热显示」：透明空窗口 show→hide 一闪，肉眼看不到，
+  // 但能让 DWM/Chromium 真正建立起这个窗口的合成层，避免第一次要弹卡片时
+  // 才开始建表面、首帧被吞。之后窗口常驻隐藏，每次弹卡片再 show。
+  win.once("ready-to-show", () => {
+    try {
+      win.showInactive();
+      setTimeout(() => { try { if (win && win.isVisible()) win.hide(); } catch {} }, 400);
+      log.info("[OVERLAY] 预热显示完成，浮层转入隐藏待命");
+    } catch (e) { log.warn(`[OVERLAY] 预热显示失败: ${e.message}`); }
+  });
 
   // 渲染层诊断：preload/页面出错时落到日志，避免"静默黑窗"无从排查
   win.webContents.on("preload-error", (_e, p, err) =>
@@ -84,14 +103,7 @@ function createOverlayWindow() {
   });
 }
 
-// 每次要弹卡片前，确保浮层定位在主显示器右下角、处于最高置顶、可见状态。
-// 定位策略：始终基于主显示器 workArea，不再用「鼠标光标所在屏」选屏——
-//   ① 避免系统枚举到虚拟显示器（如 GameViewer 串流创建的虚拟屏）时，光标选屏
-//      把卡片 setBounds 到错屏工作区，导致弹窗偏离主屏右下角（往西北偏）；
-//   ② 每次都按主屏 workArea 重算目标坐标，显示器配置变化（分辨率/缩放/虚拟屏
-//      插拔）后能自愈，不会被一次错位「锁死」；仅当坐标/尺寸确实变化才 setBounds，
-//      同屏同位置时零抖动。
-// 置顶断言仍每次执行：screen-saver 置顶非永久免疫，游戏抢焦点或切显示模式后需重申。
+// 每次要弹卡片前，确保浮层定位在主显示器右下角、处于最高置顶、并且**真的被显示出来**。
 function revealOverlay() {
   if (!win) return;
   try {
@@ -107,7 +119,17 @@ function revealOverlay() {
     }
     win.setAlwaysOnTop(true, "screen-saver");
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    if (!win.isVisible()) win.showInactive();
+
+    // 关键：无条件走一次显示 + 提层，而不是「isVisible() 才 show」。
+    // 以前判断 isVisible() 导致这行永远是死代码（窗口从启动就一直"可见"），
+    // 于是弹卡片这一步完全没有"重新显示/重绘"的触发，全靠后台窗口自己补帧，
+    // 在游戏遮挡几小时后第一张卡片就会被吞。现在每张卡片都 hide→show 一轮。
+    win.showInactive();
+    win.moveTop();
+    // 兜底再触发一次全量重绘：多显示器/部分驱动下 show 之后首帧仍可能丢
+    try { win.webContents.invalidate?.(); } catch {}
+
+    revealSeq++;
     log.info(`[OVERLAY] reveal ok vis=${win.isVisible()} monitor=${primary.id} rect=(${win.getBounds().x},${win.getBounds().y})`);
   } catch (e) {
     log.warn(`[OVERLAY] reveal 失败: ${e.message}`);
@@ -267,6 +289,20 @@ app.whenReady().then(async () => {
   // 空白区域鼠标穿透：卡片上可点击，卡片外事件落到下层（游戏/桌面）
   ipcMain.on("aw2:set-ignore", (_e, ignore) => {
     win?.setIgnoreMouseEvents(!!ignore, { forward: true });
+  });
+  // 卡片队列播完 → 隐藏浮层，回到"隐藏待命"状态，下次弹卡片重新 show。
+  // 加一点点延迟等退场动画走完；期间若又来了新卡片（revealSeq 变了）就不隐藏。
+  ipcMain.on("aw2:idle", () => {
+    const seqAtIdle = revealSeq;
+    setTimeout(() => {
+      if (seqAtIdle !== revealSeq) return;
+      try {
+        if (win && win.isVisible()) {
+          win.hide();
+          log.info("[OVERLAY] 卡片播完，浮层隐藏待命");
+        }
+      } catch (e) { log.warn(`[OVERLAY] 隐藏失败: ${e.message}`); }
+    }, 260);
   });
   ipcMain.handle("aw2:openPanel", () => openPanel());
   // 原生目录选择（面板里"选择文件夹…"用）
