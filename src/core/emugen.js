@@ -3,7 +3,7 @@
 // 用法: node src/cli.js emu-gen <appid> [游戏目录] [--no-icons]
 import path from "node:path";
 import fsp from "node:fs/promises";
-import { exists, writeJSON } from "../shared/fsx.js";
+import { exists, writeJSON, findFiles } from "../shared/fsx.js";
 import { log } from "../shared/log.js";
 import { httpFetch as fetch } from "../shared/http.js";
 import { getGameData } from "./schema.js";
@@ -17,18 +17,15 @@ async function downloadTo(url, filePath) {
   await fsp.writeFile(filePath, buf);
 }
 
-// 在根目录下找包含 steam_api*.dll 的游戏目录（限深 5 层）
-async function findGameDirs(root, depth = 5, out = []) {
-  let entries;
-  try { entries = await fsp.readdir(root, { withFileTypes: true }); }
-  catch { return out; }
-  const hasDll = entries.some((e) => e.isFile() && /^steam_api(\d{2})?\.dll$/i.test(e.name));
-  if (hasDll) { out.push(root); return out; } // DLL 所在层即游戏根，不再深入
-  if (depth <= 0) return out;
-  for (const e of entries) {
-    if (e.isDirectory() && !e.name.startsWith(".")) {
-      await findGameDirs(path.join(root, e.name), depth - 1, out);
-    }
+// 找游戏目录下所有含 steam_api*.dll 的目录（全树搜索，不限深度）
+async function findGameDirs(root) {
+  const files = await findFiles(root, { names: [/^steam_api(64)?\.dll$/i] });
+  const out = [];
+  const seen = new Set();
+  for (const f of files) {
+    const d = path.dirname(f);
+    const k = d.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); out.push(d); }
   }
   return out;
 }
@@ -43,51 +40,50 @@ async function readAppidIn(dir) {
   return null;
 }
 
-// 从游戏目录推断 appid：优先本目录，其次向下 8 层找 steam_appid.txt
-// （Unity 游戏 steam_settings 常在 Duckov_Data/Plugins/x86_64/ 第 5 层，深度不足会漏识别）
+// 从游戏目录推断 appid：全树找 steam_appid.txt（不限深度），优先路径更浅的
+// （Unity 游戏 steam_settings 可能在 Duckov_Data/Plugins/x86_64/ 第 5 层，深度不足会漏识别 —— 故全树搜）
 export async function detectGameAppid(gameDir) {
   const direct = await readAppidIn(gameDir);
   if (direct) return direct;
 
-  async function walk(dir, depth) {
-    // 先读本层条目再判断深度：否则最深一层目录里的 steam_appid.txt 永远看不到（off-by-one）
-    let entries;
-    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return null; }
-    for (const e of entries) {
-      if (e.isDirectory()) {
-        if (e.name.startsWith(".") || /^\$/.test(e.name) || depth <= 0) continue;
-        const hit = await walk(path.join(dir, e.name), depth - 1);
-        if (hit) return hit;
-        continue;
-      }
-      if (/^steam_appid\.txt$/i.test(e.name)) {
-        try {
-          const txt = (await fsp.readFile(path.join(dir, e.name), "utf8")).trim();
-          if (/^\d+$/.test(txt)) return txt;
-        } catch { /* ignore */ }
-      }
-    }
-    return null;
+  const files = await findFiles(gameDir, { names: [/^steam_appid\.txt$/i] });
+  if (!files.length) return null;
+  // 路径更浅的优先（根目录 / steam_settings 内的 steam_appid.txt 排前面）
+  files.sort((a, b) => path.resolve(a).split(path.sep).length - path.resolve(b).split(path.sep).length);
+  for (const f of files) {
+    try {
+      const txt = (await fsp.readFile(f, "utf8")).trim();
+      if (/^\d+$/.test(txt)) return txt;
+    } catch { /* next */ }
   }
+  return null;
+}
 
-  return walk(gameDir, 8);
+// 从 ini 文本取 AppId=（兼容 AppID / appid / 不同空白写法）
+function readAppIdLine(txt) {
+  const m = txt.match(/^\s*AppId\s*=\s*(\d{3,8})\s*$/im);
+  return m ? m[1] : null;
 }
 
 // 从 RUNE 等模拟器的专属 ini 读取 AppID（纯读取，不写文件）。
 // RUNE 不生成 steam_appid.txt，其 AppID 写在 steam_emu.ini 的 AppId= 行。
+// 这些 ini 可能埋在任意深度（如 UE 的 Engine/Binaries/.../Win64/），故用 findFiles 全树查找，
+// 并优先选与 steam_api*.dll 同目录的那份（最贴近游戏本体）。
 async function readAppidFromEmuIni(gameDir) {
-  const candidates = [
-    "steam_emu.ini",
-    path.join("steam_settings", "steam_emu.ini"),
-    "rune.ini",
-    path.join("steam_settings", "rune.ini"),
-  ];
-  for (const rel of candidates) {
-    try {
-      const txt = await fsp.readFile(path.join(gameDir, rel), "utf8");
-      const m = txt.match(/^\s*AppId\s*=\s*(\d{3,8})\s*$/im);
-      if (m) return m[1];
-    } catch { /* next */ }
+  const iniFiles = await findFiles(gameDir, { names: [/^steam_emu\.ini$/i, /^rune\.ini$/i] });
+  if (!iniFiles.length) return null;
+  const dllDirs = new Set(
+    (await findFiles(gameDir, { names: [/^steam_api(64)?\.dll$/i] })).map((f) => path.dirname(f).toLowerCase())
+  );
+  for (const f of iniFiles) {
+    if (dllDirs.has(path.dirname(f).toLowerCase())) {
+      const v = readAppIdLine(await fsp.readFile(f, "utf8"));
+      if (v) return v;
+    }
+  }
+  for (const f of iniFiles) {
+    const v = readAppIdLine(await fsp.readFile(f, "utf8"));
+    if (v) return v;
   }
   return null;
 }
@@ -114,10 +110,10 @@ export async function resolveAppidForPatch(gameDir) {
 // 扫描已打补丁（无论谁打的）但可能还没进面板的游戏：
 // 找出游戏目录里所有 emu DLL 层，从 steam_appid.txt（emu 运行的必需品）读 appid。
 // 返回 [{ appid, dir }]，按 appid 去重。
-export async function scanPatchedGames(searchDirs = [], depth = 5) {
+export async function scanPatchedGames(searchDirs = []) {
   const found = new Map();
   for (const root of searchDirs) {
-    for (const dir of await findGameDirs(root, depth)) {
+    for (const dir of await findGameDirs(root)) {
       const appid = await readAppidIn(dir);
       if (appid && !found.has(appid)) found.set(appid, dir);
     }

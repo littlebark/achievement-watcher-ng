@@ -63,6 +63,7 @@ export async function prefetchSchemas({
   fallbackKey,
   concurrency = 3,
   force = false,
+  iconPrefetch = true,
   onProgress,
 } = {}) {
   const cacheDir = path.join(dataRoot(), "steam_cache", "schema", lang);
@@ -86,6 +87,11 @@ export async function prefetchSchemas({
         // 顺带预热全球解锁率（稀有度判定用）；失败不影响主流程
         if (apiKey) {
           try { await getGlobalPercentages({ appID: appid, apiKey }); } catch { /* ignore */ }
+        }
+        // 顺带预热成就图标到本地缓存（Toast 优先用本地，避免解锁瞬间网络慢导致图片延迟）
+        // 失败不影响主流程；fetchIcon 内部已做去重，重复调用不会重复下载
+        if (iconPrefetch) {
+          try { await prefetchIcons(appid, data); } catch { /* ignore */ }
         }
       } catch (e) {
         result.failed.push({ appid, error: e.message });
@@ -257,4 +263,30 @@ export async function fetchIcon(url, appID) {
   } catch {
     return url;
   }
+}
+
+// 预热某游戏全部成就图标到本地缓存（与 fetchIcon 共用 steam_cache/icon/<appID>/ 目录）。
+// game 为 getGameData 返回的 schema（含 achievement.list[].icon / .icongray）。
+// 用于启动预热 / 首次解锁时的后台补预热，使「下次」弹窗命中本地缓存、不再现拉慢图。
+export async function prefetchIcons(appID, game, { concurrency = 8 } = {}) {
+  const urls = [];
+  for (const a of game?.achievement?.list || []) {
+    if (a.icon) urls.push(a.icon);
+    if (a.icongray) urls.push(a.icongray); // 部分游戏附带灰图（未解锁态）
+  }
+  const uniq = [...new Set(urls)];
+  if (!uniq.length) return { total: 0, ok: 0, failed: 0 };
+
+  let ok = 0, failed = 0;
+  for (let i = 0; i < uniq.length; i += concurrency) {
+    const slice = uniq.slice(i, i + concurrency);
+    await Promise.all(slice.map(async (u) => {
+      try {
+        const r = await fetchIcon(u, appID);
+        if (r && !/^https?:/.test(r)) ok++; // fetchIcon 失败时回退返回原 http(s) URL
+        else failed++;
+      } catch { failed++; }
+    }));
+  }
+  return { total: uniq.length, ok, failed };
 }

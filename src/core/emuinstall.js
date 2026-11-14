@@ -11,7 +11,7 @@ import fsp from "node:fs/promises";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { exists, writeJSON, readJSON } from "../shared/fsx.js";
+import { exists, writeJSON, readJSON, findFiles } from "../shared/fsx.js";
 import { log } from "../shared/log.js";
 import { dataRoot, projectRoot } from "./schema.js";
 import { loadConfig, resolvedPaths } from "./config.js";
@@ -134,18 +134,17 @@ async function findFile(root, name, depth = 4) {
   return null;
 }
 
-// 递归找所有含 steam_api*.dll 的目录（限深 4）
-// 这些目录就是 steam_settings 应当所在的位置（成就清单写入点）
-export async function findDllDirs(root, depth = 4, out = []) {
-  let entries;
-  try { entries = await fsp.readdir(root, { withFileTypes: true }); }
-  catch { return out; }
-  if (entries.some((e) => e.isFile() && /^steam_api(64)?\.dll$/i.test(e.name))) out.push(root);
-  if (depth <= 0) return out;
-  for (const e of entries) {
-    if (e.isDirectory() && !/^(steam_settings|_CommonRedist|__redist)$/i.test(e.name)) {
-      await findDllDirs(path.join(root, e.name), depth - 1, out);
-    }
+// 递归找所有含 steam_api*.dll 的目录（全树搜索，不限深度）。
+// 这些目录就是 steam_settings 应当所在的位置（成就清单写入点）。
+// UE 等引擎会把 Steamworks SDK 深埋到 Engine/Binaries/.../Win64/，限深会漏 —— 故全树搜。
+export async function findDllDirs(root) {
+  const files = await findFiles(root, { names: [/^steam_api(64)?\.dll$/i] });
+  const out = [];
+  const seen = new Set();
+  for (const f of files) {
+    const d = path.dirname(f);
+    const k = d.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); out.push(d); }
   }
   return out;
 }
@@ -160,23 +159,22 @@ function isAncestorOrSelf(anc, dir) {
 }
 
 // 找游戏 exe 所在目录：
-// 优先级 ① 是 DLL 目录的祖先（游戏根/主目录）② exe 体积大 ③ 层级浅
-async function findExeDir(root, dllDirs = [], depth = 3) {
+// 全树搜 *.exe（>1MB），优先级 ① 覆盖 DLL 目录的祖先 ② exe 体积大 ③ 层级浅。
+// 不限深度，避免 UE 等引擎把 exe 埋到 Binaries/Win64/ 而漏掉。
+async function findExeDir(root, dllDirs = []) {
+  const files = await findFiles(root, {
+    names: [/\.exe$/i],
+    maxFiles: 50000,
+    // 排除 redist / 修改器 / 备份 / 工具等目录里的 exe（这些不是游戏本体）
+    skip: /^(node_modules|\.git|\.svn|\.hg|__MACOSX|_CommonRedist|__redist|redist|tools?)$|修改器|修改工具|trainer|cheat|artmoney|存档|备份/i,
+  });
   const cands = [];
-  async function walk(dir, d) {
-    let entries;
-    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isFile() && /\.exe$/i.test(e.name)) {
-        const st = await fsp.stat(full).catch(() => null);
-        if (st && st.size > 1024 * 1024) cands.push({ size: st.size, dir, name: e.name });
-      } else if (e.isDirectory() && d > 0 && !EXE_SKIP_DIR.test(e.name)) {
-        await walk(full, d - 1);
-      }
+  for (const full of files) {
+    const st = await fsp.stat(full).catch(() => null);
+    if (st && st.size > 1024 * 1024) {
+      cands.push({ size: st.size, dir: path.dirname(full), name: path.basename(full) });
     }
   }
-  await walk(root, depth);
   if (!cands.length) return root;
 
   const scored = cands.map((c) => ({

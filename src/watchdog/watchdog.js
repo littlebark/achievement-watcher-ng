@@ -10,11 +10,12 @@ import { getWatchFolders, loadUserDirs } from "../core/discover.js";
 import { parseAchievementFile } from "../core/normalize/file-parsers.js";
 import { matchAchievements } from "../core/match.js";
 import * as track from "../core/track.js";
-import { getGameData, fetchIcon, prefetchSchemas, dataRoot } from "../core/schema.js";
+import { getGameData, fetchIcon, prefetchSchemas, prefetchIcons, dataRoot } from "../core/schema.js";
 import { sendToast } from "./notify/toast.js";
 import { startWebSocket, broadcast } from "./notify/websocket.js";
 
 const schemaCache = new Map(); // appid -> game schema
+const prefetchedIconApps = new Set(); // 已触发过图标预热（notify 路径，避免重复）的 appid
 let lastTick = 0;
 
 async function loadGame(appID, cfg) {
@@ -128,6 +129,15 @@ async function notify(achievement, game, options, delay = 0) {
     } catch (e) {
       log.error(`[ACTION] ${e.message}`);
     }
+  }
+
+  // 首次解锁某游戏时，后台补预热其余成就图标（覆盖启动预热未覆盖到的、启动后才加入列表的新游戏）。
+  // 不阻塞弹窗：当前图标由上面的 fetchIcon 同步下好，其余图在后台补齐，下次/稍后弹窗即命中本地缓存。
+  if (options.cfg.iconPrefetch && !prefetchedIconApps.has(game.appid)) {
+    prefetchedIconApps.add(game.appid);
+    prefetchIcons(game.appid, game)
+      .then((r) => log.info(`[ICON-PREFETCH] ${game.appid} 完成：本地 ${r.ok} / 失败 ${r.failed}`))
+      .catch((e) => log.warn(`[ICON-PREFETCH] ${game.appid}: ${e.message}`));
   }
 }
 
@@ -248,6 +258,7 @@ export async function startWatchdog() {
         apiKey: cfg._primaryKey,
         fallbackKey: cfg._fallbackKey,
         concurrency: 2,
+        iconPrefetch: cfg.iconPrefetch,
       })
         .then((r) => {
           log.info(`[PREFETCH] 完成：新下载 ${r.ok.length}，已缓存 ${r.cached.length}，失败 ${r.failed.length}`);
